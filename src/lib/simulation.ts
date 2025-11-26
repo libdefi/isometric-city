@@ -683,7 +683,7 @@ function calculateStats(grid: Tile[][], size: number, budget: Budget, taxRate: n
   const jobsRatio = jobs > 0 ? population / jobs : 2;
   const residentialDemand = Math.min(100, Math.max(-100, (jobs - population * 0.7) / 18));
   const commercialDemand = Math.min(100, Math.max(-100, (population * 0.3 - jobs * 0.3) / 4));
-  const industrialDemand = Math.min(100, Math.max(-100, (population * 0.2 - jobs * 0.4) / 2.5));
+  const industrialDemand = Math.min(100, Math.max(-100, (population * 0.35 - jobs * 0.3) / 2.0));
 
   // Calculate income and expenses
   const income = Math.floor(population * taxRate * 0.1 + jobs * taxRate * 0.05);
@@ -1359,6 +1359,11 @@ export function placeBuilding(
     return state;
   }
 
+  // Can't place water tower (or other utilities) on roads
+  if (buildingType === 'water_tower' && tile.building.type === 'road') {
+    return state;
+  }
+
   const newGrid = state.grid.map(row => row.map(t => ({ ...t, building: { ...t.building } })));
 
   if (zone !== null) {
@@ -1379,6 +1384,18 @@ export function placeBuilding(
     const size = getBuildingSize(buildingType);
     
     if (size.width > 1 || size.height > 1) {
+      // Can't place utility buildings (like power_plant) on roads
+      if (buildingType === 'power_plant') {
+        for (let dy = 0; dy < size.height; dy++) {
+          for (let dx = 0; dx < size.width; dx++) {
+            const checkTile = newGrid[y + dy]?.[x + dx];
+            if (checkTile && checkTile.building.type === 'road') {
+              return state; // Can't place utility building on roads
+            }
+          }
+        }
+      }
+      
       // Multi-tile building - check if we can place it
       if (!canPlaceMultiTileBuilding(newGrid, x, y, size.width, size.height, state.gridSize)) {
         return state; // Can't place here
