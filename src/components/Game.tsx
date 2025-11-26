@@ -1085,7 +1085,9 @@ const BUILDING_IMAGES: Record<string, string> = {
   tree: '/assets/buildings/trees.png',
   house_medium: '/assets/buildings/house_medium.png',
   mansion: '/assets/buildings/mansion.png',
+  house_small: '/assets/buildings/house_small.png',
   shop_medium: '/assets/buildings/shop_medium.png',
+  shop_small: '/assets/buildings/shop_small.png',
   warehouse: '/assets/buildings/warehouse.png',
 };
 
@@ -1899,7 +1901,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
       imageSrc = BUILDING_IMAGES.house_medium;
       sizeMultiplier = 1.26; // Scaled down 30% from 1.8
     } else if (buildingType === 'house_small') {
-      imageSrc = BUILDING_IMAGES.residential;
+      imageSrc = BUILDING_IMAGES.house_small;
       sizeMultiplier = 1.26; // Scaled down 30% from 1.8
     } else if (['apartment_low', 'apartment_high'].includes(buildingType)) {
       imageSrc = BUILDING_IMAGES.residential;
@@ -1907,7 +1909,9 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
       imageSrc = BUILDING_IMAGES.mansion;
     } else if (buildingType === 'shop_medium') {
       imageSrc = BUILDING_IMAGES.shop_medium;
-    } else if (['shop_small', 'office_low', 'office_high', 'mall'].includes(buildingType)) {
+    } else if (buildingType === 'shop_small') {
+      imageSrc = BUILDING_IMAGES.shop_small;
+    } else if (['office_low', 'office_high', 'mall'].includes(buildingType)) {
       imageSrc = BUILDING_IMAGES.commercial;
     } else if (buildingType === 'warehouse') {
       imageSrc = BUILDING_IMAGES.warehouse;

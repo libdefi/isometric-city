@@ -30,7 +30,10 @@ const SPRITE_DIMENSIONS: Record<string, { width: number; height: number }> = {
   '/assets/buildings/space.png': { width: 1024, height: 1024 },
   '/assets/buildings/trees.png': { width: 1024, height: 1024 },
   '/assets/buildings/house_medium.png': { width: 1024, height: 1024 },
+  '/assets/buildings/house_small.png': { width: 2048, height: 2048 },
+  '/assets/buildings/mansion.png': { width: 2048, height: 2048 },
   '/assets/buildings/shop_medium.png': { width: 2048, height: 2048 },
+  '/assets/buildings/shop_small.png': { width: 2048, height: 2048 },
   '/assets/buildings/warehouse.png': { width: 2048, height: 2048 },
 };
 
@@ -43,7 +46,7 @@ const BUILDING_IMAGES: Partial<Record<BuildingType, { src: string; tileWidth: nu
   apartment_high: { src: '/assets/buildings/residential.png', tileWidth: 1, tileHeight: 1, verticalOffset: 18 },
   mansion: { src: '/assets/buildings/mansion.png', tileWidth: 1, tileHeight: 1, verticalOffset: 16 },
   // Commercial buildings (1x1)
-  shop_small: { src: '/assets/buildings/commercial.png', tileWidth: 1, tileHeight: 1 },
+  shop_small: { src: '/assets/buildings/shop_small.png', tileWidth: 1, tileHeight: 1 },
   shop_medium: { src: '/assets/buildings/shop_medium.png', tileWidth: 1, tileHeight: 1 },
   office_low: { src: '/assets/buildings/commercial.png', tileWidth: 1, tileHeight: 1 },
   office_high: { src: '/assets/buildings/commercial.png', tileWidth: 1, tileHeight: 1 },
