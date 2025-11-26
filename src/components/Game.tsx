@@ -1234,8 +1234,158 @@ function AdvisorsPanel() {
   );
 }
 
+// Utility Overlay types
+type OverlayMode = 'none' | 'power' | 'water';
+
+// Utility Overlay Component
+function UtilityOverlay({ 
+  mode, 
+  x, 
+  y, 
+  powered, 
+  watered,
+  size 
+}: { 
+  mode: OverlayMode; 
+  x: number; 
+  y: number; 
+  powered: boolean; 
+  watered: boolean;
+  size: number;
+}) {
+  if (mode === 'none') return null;
+  
+  const hasService = mode === 'power' ? powered : watered;
+  const color = hasService ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)';
+  const glowColor = hasService ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)';
+  
+  const h = size * 0.65; // Match HEIGHT_RATIO
+  
+  return (
+    <svg 
+      width={size} 
+      height={h} 
+      viewBox={`0 0 ${size} ${h}`} 
+      style={{ 
+        position: 'absolute', 
+        top: 0, 
+        left: 0, 
+        pointerEvents: 'none',
+        zIndex: 1000,
+      }}
+    >
+      <defs>
+        <filter id={`glow-${x}-${y}`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge>
+            <feMergeNode in="coloredBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+      <polygon
+        points={`${size/2},0 ${size},${h/2} ${size/2},${h} 0,${h/2}`}
+        fill={color}
+        stroke={hasService ? '#22c55e' : '#ef4444'}
+        strokeWidth={1.5}
+        filter={`url(#glow-${x}-${y})`}
+      />
+      {/* Status icon */}
+      <g transform={`translate(${size/2}, ${h/2})`}>
+        {hasService ? (
+          // Checkmark
+          <path 
+            d="M-6,0 L-2,4 L6,-4" 
+            fill="none" 
+            stroke="white" 
+            strokeWidth={2.5} 
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : (
+          // X mark
+          <>
+            <line x1={-5} y1={-5} x2={5} y2={5} stroke="white" strokeWidth={2.5} strokeLinecap="round" />
+            <line x1={5} y1={-5} x2={-5} y2={5} stroke="white" strokeWidth={2.5} strokeLinecap="round" />
+          </>
+        )}
+      </g>
+    </svg>
+  );
+}
+
+// Utility Coverage Range Overlay (for placing utilities)
+function CoverageRangeOverlay({
+  centerX,
+  centerY,
+  radius,
+  mode,
+  gridSize,
+  size,
+  offset,
+}: {
+  centerX: number;
+  centerY: number;
+  radius: number;
+  mode: OverlayMode;
+  gridSize: number;
+  size: number;
+  offset: { x: number; y: number };
+}) {
+  if (mode === 'none') return null;
+  
+  const tiles: { x: number; y: number }[] = [];
+  
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance <= radius) {
+        const tx = centerX + dx;
+        const ty = centerY + dy;
+        if (tx >= 0 && tx < gridSize && ty >= 0 && ty < gridSize) {
+          tiles.push({ x: tx, y: ty });
+        }
+      }
+    }
+  }
+  
+  const h = size * 0.65;
+  const color = mode === 'power' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(56, 189, 248, 0.3)';
+  const strokeColor = mode === 'power' ? '#fbbf24' : '#38bdf8';
+  
+  return (
+    <>
+      {tiles.map(({ x, y }) => {
+        const screenX = (x - y) * (size / 2);
+        const screenY = (x + y) * (h / 2);
+        return (
+          <div
+            key={`range-${x}-${y}`}
+            className="absolute pointer-events-none"
+            style={{
+              left: screenX,
+              top: screenY,
+              zIndex: 999,
+            }}
+          >
+            <svg width={size} height={h} viewBox={`0 0 ${size} ${h}`}>
+              <polygon
+                points={`${size/2},0 ${size},${h/2} ${size/2},${h} 0,${h/2}`}
+                fill={color}
+                stroke={strokeColor}
+                strokeWidth={1}
+                strokeDasharray="4,2"
+              />
+            </svg>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 // Isometric Grid Component with drag support
-function IsometricGrid() {
+function IsometricGrid({ overlayMode }: { overlayMode: OverlayMode }) {
   const { state, placeAtTile } = useGame();
   const containerRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: 620, y: 160 });
@@ -1248,6 +1398,11 @@ function IsometricGrid() {
   const [lastPlacedTile, setLastPlacedTile] = useState<{ x: number; y: number } | null>(null);
   
   const { grid, gridSize, selectedTool } = state;
+  
+  // Determine if we should show coverage preview based on selected tool
+  const showCoveragePreview = (selectedTool === 'power_plant' || selectedTool === 'water_tower') && hoveredTile;
+  const coverageRadius = selectedTool === 'power_plant' ? 12 : selectedTool === 'water_tower' ? 10 : 0;
+  const coverageMode: OverlayMode = selectedTool === 'power_plant' ? 'power' : selectedTool === 'water_tower' ? 'water' : 'none';
   
   const supportsDrag = ['road', 'bulldoze', 'zone_residential', 'zone_commercial', 'zone_industrial', 'zone_dezone', 'tree'].includes(selectedTool);
   
@@ -1360,68 +1515,123 @@ function IsometricGrid() {
               const isSelected = selectedTile?.x === x && selectedTile?.y === y;
               
               // Building heights for z-offset (buildings render from bottom)
-              // Each building SVG includes its ground tile at the bottom
+              // Image-based buildings handle their own height via the ImageBuilding component
               const buildingType = tile.building.type;
+              
+              // Buildings that use PNG images have consistent height handling
+              const imageBasedBuildings = [
+                'house_small', 'house_medium', 'apartment_low', 'apartment_high', 'mansion',
+                'shop_small', 'shop_medium', 'office_low', 'office_high', 'mall',
+                'factory_small', 'factory_medium', 'factory_large', 'warehouse',
+                'fire_station', 'hospital', 'park', 'police_station', 'school',
+                'water_tower', 'power_plant', 'stadium'
+              ];
+              
+              // Multi-tile building sizes
+              const buildingSizes: Record<string, number> = {
+                'power_plant': 2,
+                'stadium': 3,
+                'airport': 4,
+              };
+              const tileSize = buildingSizes[buildingType] || 1;
+              
+              // For image-based buildings, use a consistent height based on tile size
               const buildingHeights: Record<string, number> = {
                 'grass': 0,
                 'empty': 0,
                 'water': 0,
                 'road': 0,
                 'tree': TILE_HEIGHT * 0.8,
-                'house_small': TILE_HEIGHT * 0.9,
-                'house_medium': TILE_HEIGHT * 1.15,
-                'mansion': TILE_HEIGHT * 1.15,
+                // Image-based buildings - height scales with image
+                'house_small': TILE_HEIGHT * 1.5,
+                'house_medium': TILE_HEIGHT * 1.5,
+                'mansion': TILE_HEIGHT * 1.5,
                 'apartment_low': TILE_HEIGHT * 1.5,
-                'apartment_high': TILE_HEIGHT * (1.8 + tile.building.level * 0.4),
-                'shop_small': TILE_HEIGHT * 0.7,
-                'shop_medium': TILE_HEIGHT * 1.2,
-                'office_low': TILE_HEIGHT * 1.2,
-                'office_high': TILE_HEIGHT * (1.5 + tile.building.level * 0.5),
-                'mall': TILE_HEIGHT * 1.4,
-                'factory_small': TILE_HEIGHT * 1.4,
-                'factory_medium': TILE_HEIGHT * 1.9,
-                'factory_large': TILE_HEIGHT * 1.9,
-                'warehouse': TILE_HEIGHT * 0.6,
-                'power_plant': TILE_HEIGHT * 1.7,
-                'water_tower': TILE_HEIGHT * 1.4,
-                'police_station': TILE_HEIGHT * 0.9,
-                'fire_station': TILE_HEIGHT * 1.4,
-                'hospital': TILE_HEIGHT * 1.4,
-                'school': TILE_HEIGHT * 1.35,
-                'university': TILE_HEIGHT * 1.8,
-                'park': TILE_HEIGHT * 0.7,
-                'stadium': TILE_HEIGHT * 1.4,
-                'airport': TILE_HEIGHT * 1.9,
+                'apartment_high': TILE_HEIGHT * 1.5,
+                'shop_small': TILE_HEIGHT * 1.5,
+                'shop_medium': TILE_HEIGHT * 1.5,
+                'office_low': TILE_HEIGHT * 1.5,
+                'office_high': TILE_HEIGHT * 1.5,
+                'mall': TILE_HEIGHT * 1.5,
+                'factory_small': TILE_HEIGHT * 1.5,
+                'factory_medium': TILE_HEIGHT * 1.5,
+                'factory_large': TILE_HEIGHT * 1.5,
+                'warehouse': TILE_HEIGHT * 1.5,
+                'power_plant': TILE_HEIGHT * 3, // 2x2 building
+                'water_tower': TILE_HEIGHT * 1.5,
+                'police_station': TILE_HEIGHT * 1.5,
+                'fire_station': TILE_HEIGHT * 1.5,
+                'hospital': TILE_HEIGHT * 1.5,
+                'school': TILE_HEIGHT * 1.5,
+                'university': TILE_HEIGHT * 1.8, // SVG fallback
+                'park': TILE_HEIGHT * 1.5,
+                'stadium': TILE_HEIGHT * 4.5, // 3x3 building
+                'airport': TILE_HEIGHT * 6, // 4x4 building
               };
               const heightOffset = buildingHeights[buildingType] || 0;
               
-              return (
-                <div
-                  key={`${x}-${y}`}
-                  className="absolute"
-                  style={{
-                    left: screenX,
-                    top: screenY - heightOffset,
-                    zIndex: x + y,
-                    transform: isHovered ? 'translateY(-2px)' : undefined,
-                    filter: tile.building.onFire ? 'brightness(1.3) saturate(1.5)' : isHovered ? 'brightness(1.05)' : undefined,
-                  }}
-                >
-                  <BuildingRenderer
-                    buildingType={tile.building.type}
-                    level={tile.building.level}
-                    powered={tile.building.powered}
-                    zone={tile.zone}
-                    highlight={isHovered || isSelected}
-                    size={TILE_WIDTH}
-                    onFire={tile.building.onFire}
-                  />
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+                              // Determine if this tile needs an overlay (only for developed tiles)
+                              const needsOverlay = overlayMode !== 'none' && 
+                                tile.building.type !== 'grass' && 
+                                tile.building.type !== 'empty' && 
+                                tile.building.type !== 'water' &&
+                                tile.building.type !== 'road' &&
+                                tile.building.type !== 'tree';
+                              
+                              return (
+                                <div
+                                  key={`${x}-${y}`}
+                                  className="absolute"
+                                  style={{
+                                    left: screenX,
+                                    top: screenY - heightOffset,
+                                    // Multi-tile buildings use bottom-right corner for z-index
+                                    zIndex: (x + tileSize - 1) + (y + tileSize - 1),
+                                    transform: isHovered ? 'translateY(-2px)' : undefined,
+                                    filter: tile.building.onFire ? 'brightness(1.3) saturate(1.5)' : isHovered ? 'brightness(1.05)' : undefined,
+                                  }}
+                                >
+                                  <BuildingRenderer
+                                    buildingType={tile.building.type}
+                                    level={tile.building.level}
+                                    powered={tile.building.powered}
+                                    zone={tile.zone}
+                                    highlight={isHovered || isSelected}
+                                    size={TILE_WIDTH}
+                                    onFire={tile.building.onFire}
+                                  />
+                                  {/* Utility overlay */}
+                                  {needsOverlay && (
+                                    <div style={{ position: 'absolute', top: heightOffset, left: 0 }}>
+                                      <UtilityOverlay
+                                        mode={overlayMode}
+                                        x={x}
+                                        y={y}
+                                        powered={tile.building.powered}
+                                        watered={tile.building.watered}
+                                        size={TILE_WIDTH}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                          
+                          {/* Coverage preview when placing utilities */}
+                          {showCoveragePreview && hoveredTile && (
+                            <CoverageRangeOverlay
+                              centerX={hoveredTile.x}
+                              centerY={hoveredTile.y}
+                              radius={coverageRadius}
+                              mode={coverageMode}
+                              gridSize={gridSize}
+                              size={TILE_WIDTH}
+                              offset={offset}
+                            />
+                          )}
+                        </div>
+                      </div>
       
       {selectedTile && selectedTool === 'select' && (
         <TileInfoPanel
@@ -1448,9 +1658,112 @@ function IsometricGrid() {
   );
 }
 
+// Overlay Mode Toggle Component
+function OverlayModeToggle({ 
+  overlayMode, 
+  setOverlayMode 
+}: { 
+  overlayMode: OverlayMode; 
+  setOverlayMode: (mode: OverlayMode) => void;
+}) {
+  return (
+    <Card className="absolute top-4 left-4 p-2 shadow-lg backdrop-blur-sm bg-card/90 border-border/70 z-50">
+      <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-semibold mb-2">
+        View Overlay
+      </div>
+      <div className="flex gap-1">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={overlayMode === 'none' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setOverlayMode('none')}
+                className="h-8 px-3"
+              >
+                <CloseIcon size={14} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>No Overlay</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={overlayMode === 'power' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setOverlayMode('power')}
+                className={`h-8 px-3 ${overlayMode === 'power' ? 'bg-amber-500 hover:bg-amber-600' : ''}`}
+              >
+                <PowerIcon size={14} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="text-center">
+                <div className="font-semibold">Power Grid</div>
+                <div className="text-xs text-muted-foreground">
+                  Green = Powered, Red = No Power
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={overlayMode === 'water' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setOverlayMode('water')}
+                className={`h-8 px-3 ${overlayMode === 'water' ? 'bg-cyan-500 hover:bg-cyan-600' : ''}`}
+              >
+                <WaterIcon size={14} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="text-center">
+                <div className="font-semibold">Water Supply</div>
+                <div className="text-xs text-muted-foreground">
+                  Green = Has Water, Red = No Water
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+      
+      {overlayMode !== 'none' && (
+        <div className="mt-2 pt-2 border-t border-border text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-3 h-3 rounded-sm bg-green-500/60" />
+            <span>Has {overlayMode === 'power' ? 'Power' : 'Water'}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-sm bg-red-500/60" />
+            <span>No {overlayMode === 'power' ? 'Power' : 'Water'}</span>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // Main Game Component
 export default function Game() {
   const { state } = useGame();
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
+  
+  // Auto-enable overlay when selecting utility tools
+  useEffect(() => {
+    if (state.selectedTool === 'power_plant') {
+      setOverlayMode('power');
+    } else if (state.selectedTool === 'water_tower') {
+      setOverlayMode('water');
+    }
+  }, [state.selectedTool]);
   
   return (
     <TooltipProvider>
@@ -1463,7 +1776,8 @@ export default function Game() {
           <TopBar />
           <StatsPanel />
           <div className="flex-1 relative">
-            <IsometricGrid />
+            <IsometricGrid overlayMode={overlayMode} />
+            <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />
             <MiniMap />
           </div>
         </div>

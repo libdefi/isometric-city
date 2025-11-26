@@ -67,26 +67,144 @@ function perlinNoise(x: number, y: number, seed: number, octaves: number = 4): n
   return total / maxValue;
 }
 
-// Generate terrain - grass with scattered trees
+// Generate small contiguous lake regions
+function generateLakes(grid: Tile[][], size: number, seed: number): void {
+  // Use noise to find potential lake centers - look for low points
+  const lakeNoise = (x: number, y: number) => perlinNoise(x, y, seed + 1000, 3);
+  
+  // Find lake seed points (local minimums in noise)
+  const lakeCenters: { x: number; y: number }[] = [];
+  const minDistFromEdge = 3;
+  const minDistBetweenLakes = 6;
+  
+  for (let y = minDistFromEdge; y < size - minDistFromEdge; y++) {
+    for (let x = minDistFromEdge; x < size - minDistFromEdge; x++) {
+      const noiseVal = lakeNoise(x, y);
+      
+      // Check if this is a good lake center (low noise value)
+      if (noiseVal < 0.35) {
+        // Check distance from other lake centers
+        let tooClose = false;
+        for (const center of lakeCenters) {
+          const dist = Math.sqrt((x - center.x) ** 2 + (y - center.y) ** 2);
+          if (dist < minDistBetweenLakes) {
+            tooClose = true;
+            break;
+          }
+        }
+        
+        if (!tooClose && Math.random() < 0.15) { // Random chance to spawn lake
+          lakeCenters.push({ x, y });
+        }
+      }
+    }
+  }
+  
+  // Grow lakes from each center using flood fill with size limit
+  for (const center of lakeCenters) {
+    const lakeSize = 3 + Math.floor(Math.random() * 6); // 3-8 tiles per lake
+    const lakeTiles: { x: number; y: number }[] = [{ x: center.x, y: center.y }];
+    const candidates: { x: number; y: number }[] = [];
+    
+    // Add initial neighbors as candidates
+    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of directions) {
+      const nx = center.x + dx;
+      const ny = center.y + dy;
+      if (nx >= minDistFromEdge && nx < size - minDistFromEdge && 
+          ny >= minDistFromEdge && ny < size - minDistFromEdge) {
+        candidates.push({ x: nx, y: ny });
+      }
+    }
+    
+    // Grow lake by adding adjacent tiles
+    while (lakeTiles.length < lakeSize && candidates.length > 0) {
+      // Pick a random candidate (weighted towards lower noise values for organic shapes)
+      candidates.sort((a, b) => lakeNoise(a.x, a.y) - lakeNoise(b.x, b.y));
+      const pickIndex = Math.floor(Math.random() * Math.min(3, candidates.length));
+      const picked = candidates.splice(pickIndex, 1)[0];
+      
+      // Check if already in lake
+      if (lakeTiles.some(t => t.x === picked.x && t.y === picked.y)) continue;
+      
+      // Check if tile is valid (not already water from another lake)
+      if (grid[picked.y][picked.x].building.type === 'water') continue;
+      
+      lakeTiles.push(picked);
+      
+      // Add new neighbors as candidates
+      for (const [dx, dy] of directions) {
+        const nx = picked.x + dx;
+        const ny = picked.y + dy;
+        if (nx >= minDistFromEdge && nx < size - minDistFromEdge && 
+            ny >= minDistFromEdge && ny < size - minDistFromEdge &&
+            !lakeTiles.some(t => t.x === nx && t.y === ny) &&
+            !candidates.some(c => c.x === nx && c.y === ny)) {
+          candidates.push({ x: nx, y: ny });
+        }
+      }
+    }
+    
+    // Apply lake tiles to grid
+    for (const tile of lakeTiles) {
+      grid[tile.y][tile.x].building = createBuilding('water');
+      grid[tile.y][tile.x].landValue = 60; // Water increases nearby land value
+    }
+  }
+}
+
+// Generate terrain - grass with scattered trees and lakes
 function generateTerrain(size: number): Tile[][] {
   const grid: Tile[][] = [];
   const seed = Math.random() * 1000;
 
+  // First pass: create base terrain with grass
   for (let y = 0; y < size; y++) {
     const row: Tile[] = [];
     for (let x = 0; x < size; x++) {
-      // Add some scattered trees based on noise for visual interest
-      const treeNoise = perlinNoise(x * 2, y * 2, seed + 500, 2);
-      const isTree = treeNoise > 0.72 && Math.random() > 0.65;
-
-      const buildingType: BuildingType = isTree ? 'tree' : 'grass';
-
-      row.push(createTile(x, y, buildingType));
+      row.push(createTile(x, y, 'grass'));
     }
     grid.push(row);
   }
+  
+  // Second pass: add lakes (small contiguous water regions)
+  generateLakes(grid, size, seed);
+  
+  // Third pass: add scattered trees (avoiding water)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (grid[y][x].building.type === 'water') continue; // Don't place trees on water
+      
+      const treeNoise = perlinNoise(x * 2, y * 2, seed + 500, 2);
+      const isTree = treeNoise > 0.72 && Math.random() > 0.65;
+      
+      // Also add some trees near water for visual appeal
+      const nearWater = isNearWater(grid, x, y, size);
+      const isTreeNearWater = nearWater && Math.random() > 0.7;
+
+      if (isTree || isTreeNearWater) {
+        grid[y][x].building = createBuilding('tree');
+      }
+    }
+  }
 
   return grid;
+}
+
+// Check if a tile is near water
+function isNearWater(grid: Tile[][], x: number, y: number, size: number): boolean {
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
+        if (grid[ny][nx].building.type === 'water') {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function createTile(x: number, y: number, buildingType: BuildingType = 'grass'): Tile {
@@ -855,6 +973,47 @@ export function simulateTick(state: GameState): GameState {
   };
 }
 
+// Building sizes for multi-tile buildings
+const BUILDING_SIZES: Partial<Record<BuildingType, number>> = {
+  power_plant: 2,
+  stadium: 3,
+  airport: 4,
+};
+
+// Get the size of a building (how many tiles it spans)
+export function getBuildingSize(buildingType: BuildingType): number {
+  return BUILDING_SIZES[buildingType] || 1;
+}
+
+// Check if a multi-tile building can be placed at the given position
+function canPlaceMultiTileBuilding(
+  grid: Tile[][],
+  x: number,
+  y: number,
+  size: number,
+  gridSize: number
+): boolean {
+  // Check bounds
+  if (x + size > gridSize || y + size > gridSize) {
+    return false;
+  }
+  
+  // Check all tiles are available (grass or empty, not water)
+  for (let dy = 0; dy < size; dy++) {
+    for (let dx = 0; dx < size; dx++) {
+      const tile = grid[y + dy]?.[x + dx];
+      if (!tile) return false;
+      if (tile.building.type === 'water') return false;
+      // Can't build on existing buildings (except grass/trees)
+      if (tile.building.type !== 'grass' && tile.building.type !== 'tree' && tile.building.type !== 'empty') {
+        return false;
+      }
+    }
+  }
+  
+  return true;
+}
+
 // Place a building or zone
 export function placeBuilding(
   state: GameState,
@@ -879,9 +1038,35 @@ export function placeBuilding(
       newGrid[y][x].building = createBuilding('grass');
     }
   } else if (buildingType) {
-    // Placing building
-    newGrid[y][x].building = createBuilding(buildingType);
-    newGrid[y][x].zone = 'none';
+    const size = getBuildingSize(buildingType);
+    
+    if (size > 1) {
+      // Multi-tile building - check if we can place it
+      if (!canPlaceMultiTileBuilding(newGrid, x, y, size, state.gridSize)) {
+        return state; // Can't place here
+      }
+      
+      // Place the main building on the origin tile
+      newGrid[y][x].building = createBuilding(buildingType);
+      newGrid[y][x].zone = 'none';
+      
+      // Mark other tiles as part of this building (using a special marker)
+      // We'll use '_part' suffix conceptually - store reference to origin
+      for (let dy = 0; dy < size; dy++) {
+        for (let dx = 0; dx < size; dx++) {
+          if (dx === 0 && dy === 0) continue; // Skip origin
+          // Clear these tiles but don't place a visible building
+          // They are "occupied" by the main building
+          newGrid[y + dy][x + dx].building = createBuilding('grass');
+          newGrid[y + dy][x + dx].building.type = 'empty'; // Mark as empty but occupied
+          newGrid[y + dy][x + dx].zone = 'none';
+        }
+      }
+    } else {
+      // Single tile building
+      newGrid[y][x].building = createBuilding(buildingType);
+      newGrid[y][x].zone = 'none';
+    }
   }
 
   return { ...state, grid: newGrid };

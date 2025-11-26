@@ -11,43 +11,58 @@ interface BuildingProps {
   onFire?: boolean;
 }
 
-// Mapping of building types to their PNG image paths
-const BUILDING_IMAGES: Partial<Record<BuildingType, string>> = {
-  // Residential buildings
-  house_small: '/assets/buildings/residential.png',
-  house_medium: '/assets/buildings/residential.png',
-  apartment_low: '/assets/buildings/residential.png',
-  apartment_high: '/assets/buildings/residential.png',
-  mansion: '/assets/buildings/residential.png',
-  // Industrial buildings
-  factory_small: '/assets/buildings/industrial.png',
-  factory_medium: '/assets/buildings/industrial.png',
-  factory_large: '/assets/buildings/industrial.png',
-  warehouse: '/assets/buildings/industrial.png',
-  // Service buildings
-  fire_station: '/assets/buildings/fire_station.png',
-  hospital: '/assets/buildings/hospital.png',
-  park: '/assets/buildings/park.png',
-  police_station: '/assets/buildings/police_station.png',
-  school: '/assets/buildings/school.png',
+// Mapping of building types to their PNG image paths and size multipliers
+const BUILDING_IMAGES: Partial<Record<BuildingType, { src: string; tileSize: number }>> = {
+  // Residential buildings (1x1)
+  house_small: { src: '/assets/buildings/residential.png', tileSize: 1 },
+  house_medium: { src: '/assets/buildings/residential.png', tileSize: 1 },
+  apartment_low: { src: '/assets/buildings/residential.png', tileSize: 1 },
+  apartment_high: { src: '/assets/buildings/residential.png', tileSize: 1 },
+  mansion: { src: '/assets/buildings/residential.png', tileSize: 1 },
+  // Commercial buildings (1x1)
+  shop_small: { src: '/assets/buildings/commercial.png', tileSize: 1 },
+  shop_medium: { src: '/assets/buildings/commercial.png', tileSize: 1 },
+  office_low: { src: '/assets/buildings/commercial.png', tileSize: 1 },
+  office_high: { src: '/assets/buildings/commercial.png', tileSize: 1 },
+  mall: { src: '/assets/buildings/commercial.png', tileSize: 1 },
+  // Industrial buildings (1x1)
+  factory_small: { src: '/assets/buildings/industrial.png', tileSize: 1 },
+  factory_medium: { src: '/assets/buildings/industrial.png', tileSize: 1 },
+  factory_large: { src: '/assets/buildings/industrial.png', tileSize: 1 },
+  warehouse: { src: '/assets/buildings/industrial.png', tileSize: 1 },
+  // Service buildings (1x1)
+  fire_station: { src: '/assets/buildings/fire_station.png', tileSize: 1 },
+  hospital: { src: '/assets/buildings/hospital.png', tileSize: 1 },
+  park: { src: '/assets/buildings/park.png', tileSize: 1 },
+  police_station: { src: '/assets/buildings/police_station.png', tileSize: 1 },
+  school: { src: '/assets/buildings/school.png', tileSize: 1 },
+  // Utilities
+  water_tower: { src: '/assets/buildings/watertower.png', tileSize: 1 },
+  power_plant: { src: '/assets/buildings/powerplant.png', tileSize: 2 },
+  // Special buildings
+  stadium: { src: '/assets/buildings/stadium.png', tileSize: 3 },
 };
 
 // Image-based building component
 const ImageBuilding: React.FC<{
   src: string;
   size?: number;
+  tileSize?: number; // How many tiles this building spans (1, 2, 3, etc.)
   alt: string;
-}> = ({ src, size = 64, alt }) => {
-  // Calculate image dimensions - images are roughly square but need some height for the building
-  const imageSize = size * 2;
+}> = ({ src, size = 64, tileSize = 1, alt }) => {
+  // Calculate image dimensions based on tile size
+  // For multi-tile buildings, scale the image accordingly
+  const scaledSize = size * tileSize;
+  const imageSize = scaledSize * 1.8;
   const height = getTileHeight(size);
+  const scaledHeight = height * tileSize;
   
   return (
     <div 
       style={{ 
         position: 'relative',
-        width: size,
-        height: height + imageSize * 0.6,
+        width: scaledSize,
+        height: scaledHeight + imageSize * 0.5,
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
@@ -61,7 +76,7 @@ const ImageBuilding: React.FC<{
         style={{
           objectFit: 'contain',
           position: 'absolute',
-          bottom: -height * 0.3,
+          bottom: -scaledHeight * 0.25,
           left: '50%',
           transform: 'translateX(-50%)',
         }}
@@ -897,9 +912,9 @@ export const BuildingRenderer: React.FC<{
 }> = ({ buildingType, level = 1, powered = true, zone = 'none', highlight = false, size = TILE_WIDTH, onFire = false }) => {
   const renderBuilding = () => {
     // Check if we have a PNG image for this building type
-    const imagePath = BUILDING_IMAGES[buildingType];
-    if (imagePath) {
-      return <ImageBuilding src={imagePath} size={size} alt={buildingType} />;
+    const imageConfig = BUILDING_IMAGES[buildingType];
+    if (imageConfig) {
+      return <ImageBuilding src={imageConfig.src} size={size} tileSize={imageConfig.tileSize} alt={buildingType} />;
     }
     
     // Fallback to SVG-based buildings for types without images
