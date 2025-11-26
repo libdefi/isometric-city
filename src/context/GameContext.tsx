@@ -16,8 +16,16 @@ import {
   placeBuilding,
   simulateTick,
 } from '@/lib/simulation';
+import {
+  SPRITE_PACKS,
+  DEFAULT_SPRITE_PACK_ID,
+  getSpritePack,
+  setActiveSpritePack,
+  SpritePack,
+} from '@/lib/renderConfig';
 
 const STORAGE_KEY = 'isocity-game-state';
+const SPRITE_PACK_STORAGE_KEY = 'isocity-sprite-pack';
 
 type GameContextValue = {
   state: GameState;
@@ -33,6 +41,10 @@ type GameContextValue = {
   exportState: () => string;
   hasExistingGame: boolean;
   isSaving: boolean;
+  // Sprite pack management
+  currentSpritePack: SpritePack;
+  availableSpritePacks: SpritePack[];
+  setSpritePack: (packId: string) => void;
 };
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -152,6 +164,30 @@ function clearGameState(): void {
   }
 }
 
+// Load sprite pack from localStorage
+function loadSpritePackId(): string {
+  if (typeof window === 'undefined') return DEFAULT_SPRITE_PACK_ID;
+  try {
+    const saved = localStorage.getItem(SPRITE_PACK_STORAGE_KEY);
+    if (saved && SPRITE_PACKS.some(p => p.id === saved)) {
+      return saved;
+    }
+  } catch (e) {
+    console.error('Failed to load sprite pack preference:', e);
+  }
+  return DEFAULT_SPRITE_PACK_ID;
+}
+
+// Save sprite pack to localStorage
+function saveSpritePackId(packId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(SPRITE_PACK_STORAGE_KEY, packId);
+  } catch (e) {
+    console.error('Failed to save sprite pack preference:', e);
+  }
+}
+
 export function GameProvider({ children }: { children: React.ReactNode }) {
   // Start with a default state, we'll load from localStorage after mount
   const [state, setState] = useState<GameState>(() => createInitialGameState(60, 'IsoCity'));
@@ -162,8 +198,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const skipNextSaveRef = useRef(false);
   const hasLoadedRef = useRef(false);
   
-  // Load game state from localStorage on mount (client-side only)
+  // Sprite pack state
+  const [currentSpritePack, setCurrentSpritePack] = useState<SpritePack>(() => getSpritePack(DEFAULT_SPRITE_PACK_ID));
+  
+  // Load game state and sprite pack from localStorage on mount (client-side only)
   useEffect(() => {
+    // Load sprite pack preference
+    const savedPackId = loadSpritePackId();
+    const pack = getSpritePack(savedPackId);
+    setCurrentSpritePack(pack);
+    setActiveSpritePack(pack);
+    
+    // Load game state
     const saved = loadGameState();
     if (saved) {
       skipNextSaveRef.current = true; // Set skip flag BEFORE updating state
@@ -354,6 +400,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, disastersEnabled: enabled }));
   }, []);
 
+  const setSpritePack = useCallback((packId: string) => {
+    const pack = getSpritePack(packId);
+    setCurrentSpritePack(pack);
+    setActiveSpritePack(pack);
+    saveSpritePackId(packId);
+  }, []);
+
   const newGame = useCallback((name?: string, size?: number) => {
     clearGameState(); // Clear saved state when starting fresh
     const fresh = createInitialGameState(size ?? 60, name || 'IsoCity');
@@ -399,6 +452,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     exportState,
     hasExistingGame,
     isSaving,
+    // Sprite pack management
+    currentSpritePack,
+    availableSpritePacks: SPRITE_PACKS,
+    setSpritePack,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

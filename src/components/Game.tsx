@@ -30,7 +30,7 @@ import {
   BudgetIcon,
   SettingsIcon,
 } from './ui/Icons';
-import { USE_TILE_RENDERER, SPRITE_SHEET, getSpriteCoords, BUILDING_TO_SPRITE, SPRITE_VERTICAL_OFFSETS, SPRITE_HORIZONTAL_OFFSETS, SPRITE_ORDER } from '@/lib/renderConfig';
+import { USE_TILE_RENDERER, SPRITE_SHEET, getSpriteCoords, BUILDING_TO_SPRITE, SPRITE_VERTICAL_OFFSETS, SPRITE_HORIZONTAL_OFFSETS, SPRITE_ORDER, SpritePack, getActiveSpritePack } from '@/lib/renderConfig';
 
 // Import shadcn components
 import { Button } from '@/components/ui/button';
@@ -874,7 +874,7 @@ function StatisticsPanel() {
 
 // Settings Panel
 function SettingsPanel() {
-  const { state, setActivePanel, setDisastersEnabled, newGame, loadState, exportState } = useGame();
+  const { state, setActivePanel, setDisastersEnabled, newGame, loadState, exportState, currentSpritePack, availableSpritePacks, setSpritePack } = useGame();
   const { disastersEnabled, cityName, gridSize } = state;
   const [newCityName, setNewCityName] = useState(cityName);
   const [showNewGameConfirm, setShowNewGameConfirm] = useState(false);
@@ -926,6 +926,40 @@ function SettingsPanel() {
                 checked={disastersEnabled}
                 onCheckedChange={setDisastersEnabled}
               />
+            </div>
+            
+            <div className="py-2">
+              <Label>Sprite Pack</Label>
+              <p className="text-muted-foreground text-xs mb-2">Choose building artwork style</p>
+              <div className="grid grid-cols-1 gap-2">
+                {availableSpritePacks.map((pack) => (
+                  <button
+                    key={pack.id}
+                    onClick={() => setSpritePack(pack.id)}
+                    className={`flex items-center gap-3 p-2 rounded-md border transition-colors text-left ${
+                      currentSpritePack.id === pack.id
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded overflow-hidden bg-muted flex-shrink-0">
+                      <img 
+                        src={pack.src} 
+                        alt={pack.name}
+                        className="w-full h-full object-cover object-top"
+                        style={{ imageRendering: 'pixelated' }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{pack.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">{pack.src}</div>
+                    </div>
+                    {currentSpritePack.id === pack.id && (
+                      <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           
@@ -1172,15 +1206,16 @@ function loadSpriteImage(src: string, applyFilter: boolean = true): Promise<HTML
 
 // Sprite Test Panel
 function SpriteTestPanel({ onClose }: { onClose: () => void }) {
+  const { currentSpritePack } = useGame();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [spriteSheet, setSpriteSheet] = useState<HTMLImageElement | null>(null);
   
-  // Load sprite sheet
+  // Load sprite sheet from current pack
   useEffect(() => {
     const img = new Image();
     img.onload = () => setSpriteSheet(img);
-    img.src = SPRITE_SHEET.src;
-  }, []);
+    img.src = currentSpritePack.src;
+  }, [currentSpritePack]);
   
   // Draw sprite test grid
   useEffect(() => {
@@ -1202,7 +1237,7 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
     
     // Grid setup - arrange sprites in rows of 5
     const cols = 5;
-    const rows = Math.ceil(SPRITE_ORDER.length / cols);
+    const rows = Math.ceil(currentSpritePack.spriteOrder.length / cols);
     const tileW = 64;
     const tileH = tileW * 0.6;
     const padding = 30;
@@ -1231,7 +1266,7 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
     const sheetWidth = spriteSheet.naturalWidth || spriteSheet.width;
     const sheetHeight = spriteSheet.naturalHeight || spriteSheet.height;
     
-    SPRITE_ORDER.forEach((spriteKey, index) => {
+    currentSpritePack.spriteOrder.forEach((spriteKey, index) => {
       const col = index % cols;
       const row = Math.floor(index / cols);
       
@@ -1256,12 +1291,12 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
       ctx.fill();
       
       // Find a building type that maps to this sprite key
-      const buildingType = Object.entries(BUILDING_TO_SPRITE).find(
+      const buildingType = Object.entries(currentSpritePack.buildingToSprite).find(
         ([, value]) => value === spriteKey
       )?.[0] || spriteKey;
       
-      // Get sprite coordinates
-      const coords = getSpriteCoords(buildingType, sheetWidth, sheetHeight);
+      // Get sprite coordinates using the current pack
+      const coords = getSpriteCoords(buildingType, sheetWidth, sheetHeight, currentSpritePack);
       
       if (coords) {
         // Calculate destination size preserving aspect ratio
@@ -1274,7 +1309,7 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
         const drawY = baseY + tileH / 2 - destHeight + destHeight * 0.15;
         
         // Draw sprite (using filtered version if available)
-        const filteredSpriteSheet = imageCache.get(`${SPRITE_SHEET.src}_filtered`) || spriteSheet;
+        const filteredSpriteSheet = imageCache.get(`${currentSpritePack.src}_filtered`) || spriteSheet;
         ctx.drawImage(
           filteredSpriteSheet,
           coords.sx, coords.sy, coords.sw, coords.sh,
@@ -1294,7 +1329,7 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
       ctx.font = '8px monospace';
       ctx.fillText(`[${index}]`, baseX, baseY + tileH + 26);
     });
-  }, [spriteSheet]);
+  }, [spriteSheet, currentSpritePack]);
   
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -1302,7 +1337,7 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
         <DialogHeader>
           <DialogTitle>Sprite Test View</DialogTitle>
           <DialogDescription>
-            All {SPRITE_ORDER.length} sprites from the sprite sheet. Index shown in brackets.
+            All {currentSpritePack.spriteOrder.length} sprites from "{currentSpritePack.name}". Index shown in brackets.
           </DialogDescription>
         </DialogHeader>
         
@@ -1315,8 +1350,8 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
         </div>
         
         <div className="text-xs text-muted-foreground space-y-1">
-          <p>Sprite sheet: {SPRITE_SHEET.src} ({SPRITE_SHEET.cols}x{SPRITE_SHEET.rows} grid)</p>
-          <p>Edit offsets in <code className="bg-muted px-1 rounded">src/lib/renderConfig.ts</code> → SPRITE_VERTICAL_OFFSETS</p>
+          <p>Sprite sheet: {currentSpritePack.src} ({currentSpritePack.cols}x{currentSpritePack.rows} grid)</p>
+          <p>Edit offsets in <code className="bg-muted px-1 rounded">src/lib/renderConfig.ts</code> → each sprite pack's verticalOffsets</p>
         </div>
       </DialogContent>
     </Dialog>
@@ -1452,7 +1487,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
   selectedTile: { x: number; y: number } | null; 
   setSelectedTile: (tile: { x: number; y: number } | null) => void;
 }) {
-  const { state, placeAtTile } = useGame();
+  const { state, placeAtTile, currentSpritePack } = useGame();
   const { grid, gridSize, selectedTool, speed } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1771,11 +1806,13 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
     ctx.restore();
   }, []);
 
-  // Load all building images on mount
+  // Load all building images on mount and when sprite pack changes
   useEffect(() => {
     if (USE_TILE_RENDERER) {
       // Load only the sprite sheet with background color filtering
-      loadSpriteImage(SPRITE_SHEET.src, true)
+      // Use the current sprite pack's source
+      setImagesLoaded(false);
+      loadSpriteImage(currentSpritePack.src, true)
         .then(() => setImagesLoaded(true))
         .catch(console.error);
     } else {
@@ -1784,7 +1821,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
         .then(() => setImagesLoaded(true))
         .catch(console.error);
     }
-  }, []);
+  }, [currentSpritePack]);
   
   // Update canvas size on resize with high-DPI support
   useEffect(() => {
@@ -1947,7 +1984,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
     });
     
     ctx.restore();
-  }, [grid, gridSize, offset, zoom, hoveredTile, selectedTile, overlayMode, imagesLoaded, canvasSize, dragStartTile, dragEndTile, state.services]);
+  }, [grid, gridSize, offset, zoom, hoveredTile, selectedTile, overlayMode, imagesLoaded, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack]);
   
   // Animate decorative car traffic on top of the base canvas
   useEffect(() => {
@@ -2473,7 +2510,9 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
       // ===== TILE RENDERER PATH =====
       // Handles both single-tile and multi-tile buildings
       // Get the filtered sprite sheet from cache (or fallback to unfiltered if not available)
-      const filteredSpriteSheet = imageCache.get(`${SPRITE_SHEET.src}_filtered`) || imageCache.get(SPRITE_SHEET.src);
+      // Use the active sprite pack's source for cache lookup
+      const activePack = getActiveSpritePack();
+      const filteredSpriteSheet = imageCache.get(`${activePack.src}_filtered`) || imageCache.get(activePack.src);
       
       if (filteredSpriteSheet) {
         // Use naturalWidth/naturalHeight for accurate source dimensions
