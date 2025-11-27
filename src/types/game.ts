@@ -213,6 +213,7 @@ export interface Building {
 export interface Tile {
   x: number;
   y: number;
+  elevation: number;
   zone: ZoneType;
   building: Building;
   landValue: number;

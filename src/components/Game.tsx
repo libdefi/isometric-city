@@ -5969,6 +5969,34 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       ctx.lineCap = 'butt';
     }
     
+    const hexToRgb = (hex: string) => {
+      const normalized = hex.replace('#', '');
+      const bigint = parseInt(normalized, 16);
+      return {
+        r: (bigint >> 16) & 255,
+        g: (bigint >> 8) & 255,
+        b: bigint & 255,
+      };
+    };
+
+    const blendHexColors = (base: string, target: string, amount: number) => {
+      const t = Math.min(1, Math.max(0, amount));
+      const baseRgb = hexToRgb(base);
+      const targetRgb = hexToRgb(target);
+
+      const r = Math.round(baseRgb.r + (targetRgb.r - baseRgb.r) * t);
+      const g = Math.round(baseRgb.g + (targetRgb.g - baseRgb.g) * t);
+      const b = Math.round(baseRgb.b + (targetRgb.b - baseRgb.b) * t);
+
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    };
+
+    const applyElevationTint = (color: string, elevation: number, target: string) => {
+      const factor = Math.min(Math.max(elevation, 0) / 8, 1);
+      if (factor <= 0) return color;
+      return blendHexColors(color, target, factor);
+    };
+
     // Draw isometric tile base
     function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, highlight: boolean, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
       const w = TILE_WIDTH;
@@ -6059,7 +6087,15 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         }
         strokeColor = '#f59e0b';
       }
-      
+
+      const elevation = tile.elevation ?? 0;
+      if (tile.building.type !== 'water') {
+        topColor = applyElevationTint(topColor, elevation, '#d1d5db');
+        leftColor = applyElevationTint(leftColor, elevation, '#9ca3af');
+        rightColor = applyElevationTint(rightColor, elevation, '#e5e7eb');
+        strokeColor = applyElevationTint(strokeColor, elevation, '#9ca3af');
+      }
+
       // Skip drawing green base for grass/empty tiles adjacent to water (will be drawn later over water)
       const shouldSkipDrawing = skipGreenBase && (tile.building.type === 'grass' || tile.building.type === 'empty');
       
@@ -6140,7 +6176,13 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         rightColor = '#7a5a3a';
         strokeColor = '#f59e0b';
       }
-      
+
+      const elevation = tile.elevation ?? 0;
+      topColor = applyElevationTint(topColor, elevation, '#d1d5db');
+      leftColor = applyElevationTint(leftColor, elevation, '#9ca3af');
+      rightColor = applyElevationTint(rightColor, elevation, '#e5e7eb');
+      strokeColor = applyElevationTint(strokeColor, elevation, '#9ca3af');
+
       // Draw the isometric diamond (top face)
       ctx.fillStyle = topColor;
       ctx.beginPath();

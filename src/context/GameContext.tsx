@@ -170,6 +170,9 @@ function loadGameState(): GameState | null {
               if (parsed.grid[y][x]?.building && parsed.grid[y][x].building.abandoned === undefined) {
                 parsed.grid[y][x].building.abandoned = false;
               }
+              if (parsed.grid[y][x]?.elevation === undefined) {
+                parsed.grid[y][x].elevation = 0;
+              }
             }
           }
         }
@@ -525,7 +528,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const newGame = useCallback((name?: string, size?: number) => {
     clearGameState(); // Clear saved state when starting fresh
-    const fresh = createInitialGameState(size ?? 60, name || 'IsoCity');
+    const fresh = createInitialGameState(size ?? 66, name || 'IsoCity');
     setState(fresh);
   }, []);
 
@@ -562,6 +565,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               // Migrate abandoned property for existing buildings (they're not abandoned)
               if (parsed.grid[y][x]?.building && parsed.grid[y][x].building.abandoned === undefined) {
                 parsed.grid[y][x].building.abandoned = false;
+              }
+              if (parsed.grid[y][x]?.elevation === undefined) {
+                parsed.grid[y][x].elevation = 0;
               }
             }
           }
