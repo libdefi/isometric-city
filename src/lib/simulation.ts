@@ -211,7 +211,8 @@ function generateLakes(grid: Tile[][], size: number, seed: number): WaterBody[] 
     // Apply lake tiles to grid
     for (const tile of lakeTiles) {
       grid[tile.y][tile.x].building = createBuilding('water');
-      grid[tile.y][tile.x].landValue = 60; // Water increases nearby land value
+      // Land value will be calculated dynamically, but water tiles themselves have low value
+      grid[tile.y][tile.x].landValue = 5;
     }
     
     // Calculate center for labeling
@@ -298,7 +299,8 @@ function generateOceans(grid: Tile[][], size: number, seed: number): WaterBody[]
         
         if (x >= 0 && x < size && y >= 0 && y < size && grid[y][x].building.type !== 'water') {
           grid[y][x].building = createBuilding('water');
-          grid[y][x].landValue = 60;
+          // Land value will be calculated dynamically, but water tiles themselves have low value
+          grid[y][x].landValue = 5;
           tiles.push({ x, y });
         }
       }
@@ -543,7 +545,7 @@ function createTile(x: number, y: number, buildingType: BuildingType = 'grass'):
     y,
     zone: 'none',
     building: createBuilding(buildingType),
-    landValue: 50,
+    landValue: 30, // Base land value - will be recalculated dynamically
     pollution: 0,
     crime: 0,
     traffic: 0,
@@ -638,6 +640,14 @@ function createAchievements(): Achievement[] {
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
+  
+  // Calculate initial service coverage and land values
+  const services = calculateServiceCoverage(grid, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      grid[y][x].landValue = calculateLandValue(grid, x, y, size, services);
+    }
+  }
 
   return {
     grid,
@@ -654,7 +664,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     effectiveTaxRate: 9, // Start matching taxRate
     stats: createInitialStats(),
     budget: createInitialBudget(),
-    services: createServiceCoverage(size),
+    services,
     notifications: [],
     achievements: createAchievements(),
     advisorMessages: [],
@@ -664,6 +674,206 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     adjacentCities,
     waterBodies,
   };
+}
+
+// Calculate dynamic land value based on nearby factors
+function calculateLandValue(
+  grid: Tile[][],
+  x: number,
+  y: number,
+  size: number,
+  services: ServiceCoverage
+): number {
+  const tile = grid[y][x];
+  
+  // Base land value
+  let value = 30;
+  
+  // Water proximity - waterfront premium (strongest factor)
+  // Check for water within 3 tiles
+  let waterDistance = Infinity;
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
+        if (grid[ny][nx].building.type === 'water') {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < waterDistance) {
+            waterDistance = dist;
+          }
+        }
+      }
+    }
+  }
+  
+  if (waterDistance < Infinity) {
+    // Waterfront premium: +40 for adjacent, decreasing with distance
+    if (waterDistance <= 1) {
+      value += 40; // Directly adjacent to water
+    } else if (waterDistance <= 2) {
+      value += 25; // Very close to water
+    } else {
+      value += Math.max(0, 15 - waterDistance * 3); // Fades with distance
+    }
+  }
+  
+  // Parks and green spaces nearby (within 5 tiles)
+  let parkBonus = 0;
+  let treeBonus = 0;
+  for (let dy = -5; dy <= 5; dy++) {
+    for (let dx = -5; dx <= 5; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < size && ny >= 0 && ny < size && !(dx === 0 && dy === 0)) {
+        const neighbor = grid[ny][nx];
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const influence = Math.max(0, 1 - dist / 5); // Fades with distance
+        
+        // Parks have strong positive influence
+        if (neighbor.building.type === 'park' || neighbor.building.type === 'park_large' ||
+            neighbor.building.type === 'tennis' || neighbor.building.type === 'playground_small' ||
+            neighbor.building.type === 'playground_large' || neighbor.building.type === 'baseball_field_small' ||
+            neighbor.building.type === 'soccer_field_small' || neighbor.building.type === 'football_field' ||
+            neighbor.building.type === 'baseball_stadium' || neighbor.building.type === 'swimming_pool' ||
+            neighbor.building.type === 'skate_park' || neighbor.building.type === 'mini_golf_course' ||
+            neighbor.building.type === 'bleachers_field' || neighbor.building.type === 'amphitheater' ||
+            neighbor.building.type === 'greenhouse_garden' || neighbor.building.type === 'campground' ||
+            neighbor.building.type === 'community_garden' || neighbor.building.type === 'pond_park' ||
+            neighbor.building.type === 'mountain_trailhead') {
+          const parkValue = BUILDING_STATS[neighbor.building.type]?.landValue || 20;
+          parkBonus += parkValue * influence * 0.5; // Parks boost nearby land value
+        }
+        
+        // Trees have moderate positive influence
+        if (neighbor.building.type === 'tree') {
+          treeBonus += 2 * influence;
+        }
+      }
+    }
+  }
+  value += Math.min(25, parkBonus); // Cap park bonus
+  value += Math.min(10, treeBonus); // Cap tree bonus
+  
+  // Service coverage - better services = higher land value
+  const serviceScore = (
+    services.police[y][x] * 0.15 +
+    services.fire[y][x] * 0.1 +
+    services.health[y][x] * 0.2 +
+    services.education[y][x] * 0.15
+  ) / 100; // Normalize to 0-1
+  value += serviceScore * 30; // Up to +30 from services
+  
+  // Pollution penalty (strong negative)
+  const pollutionPenalty = Math.min(40, tile.pollution * 0.8);
+  value -= pollutionPenalty;
+  
+  // Crime penalty
+  const crimePenalty = Math.min(20, tile.crime * 0.5);
+  value -= crimePenalty;
+  
+  // Traffic penalty (moderate negative)
+  const trafficPenalty = Math.min(15, tile.traffic * 0.3);
+  value -= trafficPenalty;
+  
+  // Nearby buildings influence (positive for desirable, negative for industrial)
+  let buildingInfluence = 0;
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < size && ny >= 0 && ny < size && !(dx === 0 && dy === 0)) {
+        const neighbor = grid[ny][nx];
+        const buildingType = neighbor.building.type;
+        const buildingStats = BUILDING_STATS[buildingType];
+        
+        if (buildingStats && buildingType !== 'grass' && buildingType !== 'water' && 
+            buildingType !== 'road' && buildingType !== 'tree' && buildingType !== 'empty') {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const influence = Math.max(0, 1 - dist / 3) * 0.3; // Fades with distance
+          
+          // Use building's landValue stat as influence (already positive/negative)
+          buildingInfluence += buildingStats.landValue * influence;
+        }
+      }
+    }
+  }
+  value += Math.max(-15, Math.min(20, buildingInfluence)); // Cap building influence
+  
+  // Major attractions boost (stadiums, museums, airports, etc.)
+  let attractionBonus = 0;
+  const majorAttractions: BuildingType[] = [
+    'stadium', 'museum', 'airport', 'space_program', 'city_hall', 
+    'amusement_park', 'baseball_stadium', 'university'
+  ];
+  
+  for (let dy = -8; dy <= 8; dy++) {
+    for (let dx = -8; dx <= 8; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < size && ny >= 0 && ny < size && !(dx === 0 && dy === 0)) {
+        const neighbor = grid[ny][nx];
+        if (majorAttractions.includes(neighbor.building.type)) {
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const influence = Math.max(0, 1 - dist / 8);
+          const attractionValue = BUILDING_STATS[neighbor.building.type]?.landValue || 40;
+          attractionBonus += attractionValue * influence * 0.2;
+        }
+      }
+    }
+  }
+  value += Math.min(25, attractionBonus); // Cap attraction bonus
+  
+  // Subway access bonus
+  if (tile.hasSubway) {
+    value += 15; // Direct subway access is valuable
+  }
+  
+  // Check for subway nearby (within 2 tiles)
+  let nearbySubway = false;
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < size && ny >= 0 && ny < size && !(dx === 0 && dy === 0)) {
+        if (grid[ny][nx].hasSubway) {
+          nearbySubway = true;
+          break;
+        }
+      }
+    }
+    if (nearbySubway) break;
+  }
+  if (nearbySubway) {
+    value += 8; // Nearby subway is also valuable
+  }
+  
+  // Road access bonus (moderate)
+  let hasRoadAccess = false;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx >= 0 && nx < size && ny >= 0 && ny < size && !(dx === 0 && dy === 0)) {
+        if (grid[ny][nx].building.type === 'road') {
+          hasRoadAccess = true;
+          break;
+        }
+      }
+    }
+    if (hasRoadAccess) break;
+  }
+  if (hasRoadAccess) {
+    value += 5; // Road access is valuable
+  }
+  
+  // Ensure minimum value (even bad areas have some value)
+  value = Math.max(5, value);
+  
+  // Cap maximum value (prevent unrealistic extremes)
+  value = Math.min(150, value);
+  
+  return Math.round(value);
 }
 
 // Calculate service coverage from service buildings
@@ -1477,6 +1687,13 @@ export function simulateTick(state: GameState): GameState {
 
   // Update service coverage
   const services = calculateServiceCoverage(newGrid, size);
+
+  // Calculate and update land values dynamically
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      newGrid[y][x].landValue = calculateLandValue(newGrid, x, y, size, services);
+    }
+  }
 
   // Evolve buildings
   for (let y = 0; y < size; y++) {
