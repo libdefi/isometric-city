@@ -1616,8 +1616,8 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
   selectedTile: { x: number; y: number } | null; 
   setSelectedTile: (tile: { x: number; y: number } | null) => void;
 }) {
-  const { state, placeAtTile, currentSpritePack } = useGame();
-  const { grid, gridSize, selectedTool, speed } = state;
+  const { state, placeAtTile, currentSpritePack, connectToCity } = useGame();
+  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1647,6 +1647,8 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 });
   const [dragStartTile, setDragStartTile] = useState<{ x: number; y: number } | null>(null);
   const [dragEndTile, setDragEndTile] = useState<{ x: number; y: number } | null>(null);
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
+  const [connectionDirection, setConnectionDirection] = useState<'north' | 'east' | 'south' | 'west' | null>(null);
   const keysPressedRef = useRef<Set<string>>(new Set());
 
   // Only zoning tools show the grid/rectangle selection visualization
@@ -2625,6 +2627,45 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
         drawBuilding(ctx, screenX, screenY, tile);
       });
     
+    // Draw water body names
+    if (waterBodies && waterBodies.length > 0) {
+      ctx.save();
+      ctx.font = `${Math.max(10, 12 / zoom)}px sans-serif`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      for (const waterBody of waterBodies) {
+        if (waterBody.tiles.length === 0) continue;
+        
+        // Calculate center position of water body
+        let sumX = 0, sumY = 0;
+        let centerTileX = 0, centerTileY = 0;
+        
+        for (const tile of waterBody.tiles) {
+          sumX += tile.x;
+          sumY += tile.y;
+        }
+        centerTileX = Math.round(sumX / waterBody.tiles.length);
+        centerTileY = Math.round(sumY / waterBody.tiles.length);
+        
+        // Convert to screen coordinates
+        const { screenX, screenY } = gridToScreen(centerTileX, centerTileY, offset.x / zoom, offset.y / zoom);
+        
+        // Only draw if visible on screen
+        if (screenX >= -TILE_WIDTH && screenX <= canvasSize.width + TILE_WIDTH &&
+            screenY >= -TILE_HEIGHT && screenY <= canvasSize.height + TILE_HEIGHT) {
+          // Draw text with outline for better visibility
+          ctx.strokeText(waterBody.name, screenX, screenY);
+          ctx.fillText(waterBody.name, screenX, screenY);
+        }
+      }
+      
+      ctx.restore();
+    }
+    
     // Draw green base tiles for grass/empty tiles adjacent to water (after water, before gray bases)
     greenBaseTileQueue
       .sort((a, b) => a.depth - b.depth)
@@ -2696,7 +2737,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
     });
     
     ctx.restore();
-  }, [grid, gridSize, offset, zoom, hoveredTile, selectedTile, overlayMode, imagesLoaded, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack]);
+  }, [grid, gridSize, offset, zoom, hoveredTile, selectedTile, overlayMode, imagesLoaded, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies]);
   
   // Animate decorative car traffic AND emergency vehicles on top of the base canvas
   useEffect(() => {
@@ -3782,11 +3823,35 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
         }
       } else {
         setHoveredTile(null);
+        // Track if we're dragging off the edge (for road connections)
+        if (isDragging && selectedTool === 'road' && dragStartTile) {
+          // Determine which edge we're dragging off
+          let direction: 'north' | 'east' | 'south' | 'west' | null = null;
+          if (gridY < 0) direction = 'north';
+          else if (gridX >= gridSize) direction = 'east';
+          else if (gridY >= gridSize) direction = 'south';
+          else if (gridX < 0) direction = 'west';
+          
+          if (direction) {
+            setConnectionDirection(direction);
+          }
+        }
       }
     }
-  }, [isPanning, isDragging, dragStart, offset, gridSize, zoom, showsDragGrid, supportsDragPlace, dragStartTile, lastPlacedTile, placeAtTile]);
+  }, [isPanning, isDragging, dragStart, offset, gridSize, zoom, showsDragGrid, supportsDragPlace, dragStartTile, lastPlacedTile, placeAtTile, selectedTool]);
   
   const handleMouseUp = useCallback(() => {
+    // Check for road connection when dragging off edge
+    if (isDragging && selectedTool === 'road' && connectionDirection && dragStartTile) {
+      // Check if there's a city in this direction
+      const availableCities = adjacentCities.filter(
+        city => city.direction === connectionDirection && !city.connected
+      );
+      if (availableCities.length > 0) {
+        setConnectionDialogOpen(true);
+      }
+    }
+    
     // Fill the drag rectangle when mouse is released (only for zoning tools)
     if (isDragging && dragStartTile && dragEndTile && showsDragGrid) {
       const minX = Math.min(dragStartTile.x, dragEndTile.x);
@@ -3806,9 +3871,12 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
     setIsPanning(false);
     setIsDragging(false);
     setLastPlacedTile(null);
-    setDragStartTile(null);
-    setDragEndTile(null);
-  }, [isDragging, dragStartTile, dragEndTile, showsDragGrid, placeAtTile]);
+    if (!connectionDialogOpen) {
+      setDragStartTile(null);
+      setDragEndTile(null);
+      setConnectionDirection(null);
+    }
+  }, [isDragging, dragStartTile, dragEndTile, showsDragGrid, placeAtTile, selectedTool, connectionDirection, adjacentCities, connectionDialogOpen]);
   
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -3866,6 +3934,51 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
             </>
           )}
         </div>
+      )}
+      
+      {connectionDialogOpen && connectionDirection && (
+        <Dialog open={connectionDialogOpen} onOpenChange={setConnectionDialogOpen}>
+          <DialogContent className="max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Connect to City</DialogTitle>
+              <DialogDescription>
+                You're building a road off the {connectionDirection} edge. Connect to a nearby city?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 mt-4">
+              {adjacentCities
+                .filter(city => city.direction === connectionDirection && !city.connected)
+                .map(city => (
+                  <Button
+                    key={city.name}
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => {
+                      connectToCity(city.name);
+                      setConnectionDialogOpen(false);
+                      setConnectionDirection(null);
+                      setDragStartTile(null);
+                      setDragEndTile(null);
+                    }}
+                  >
+                    Connect to {city.name}
+                  </Button>
+                ))}
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setConnectionDialogOpen(false);
+                  setConnectionDirection(null);
+                  setDragStartTile(null);
+                  setDragEndTile(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
       
     </div>
