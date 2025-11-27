@@ -422,6 +422,21 @@ function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody
   // Combine all water bodies
   const waterBodies = [...lakeBodies, ...oceanBodies];
   
+  // Third-and-a-half pass: generate hilly terrain (avoiding water)
+  // Use noise to create hilly areas with grey mountain peaks
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (grid[y][x].building.type === 'water') continue; // Don't make water hilly
+      
+      // Use different noise parameters for hills (higher frequency, different seed)
+      const hillNoise = perlinNoise(x * 0.15, y * 0.15, seed + 3000, 3);
+      // Create hilly areas (about 15-20% of non-water tiles)
+      if (hillNoise > 0.75) {
+        grid[y][x].terrain = 'hilly';
+      }
+    }
+  }
+  
   // Fourth pass: add scattered trees (avoiding water)
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -537,7 +552,7 @@ export function getWaterAdjacency(
   return { hasWater, shouldFlip };
 }
 
-function createTile(x: number, y: number, buildingType: BuildingType = 'grass'): Tile {
+function createTile(x: number, y: number, buildingType: BuildingType = 'grass', terrain: 'flat' | 'hilly' = 'flat'): Tile {
   return {
     x,
     y,
@@ -548,6 +563,8 @@ function createTile(x: number, y: number, buildingType: BuildingType = 'grass'):
     crime: 0,
     traffic: 0,
     hasSubway: false,
+    terrain,
+    flagged: false,
   };
 }
 
@@ -920,6 +937,7 @@ function evolveBuilding(grid: Tile[][], x: number, y: number, services: ServiceC
                 clearedBuilding.powered = services.power[y + dy]?.[x + dx] ?? false;
                 clearedBuilding.watered = services.water[y + dy]?.[x + dx] ?? false;
                 clearTile.building = clearedBuilding;
+                clearTile.flagged = false;
               }
             }
           }
@@ -1045,6 +1063,26 @@ function evolveBuilding(grid: Tile[][], x: number, y: number, services: ServiceC
       anchor.level = targetLevel;
       anchorX = footprint.originX;
       anchorY = footprint.originY;
+      // Flag tiles if on hilly terrain
+      let hasHillyTerrain = false;
+      for (let dy = 0; dy < size.height; dy++) {
+        for (let dx = 0; dx < size.width; dx++) {
+          if (grid[anchorY + dy]?.[anchorX + dx]?.terrain === 'hilly') {
+            hasHillyTerrain = true;
+            break;
+          }
+        }
+        if (hasHillyTerrain) break;
+      }
+      if (hasHillyTerrain) {
+        for (let dy = 0; dy < size.height; dy++) {
+          for (let dx = 0; dx < size.width; dx++) {
+            if (grid[anchorY + dy]?.[anchorX + dx]) {
+              grid[anchorY + dy][anchorX + dx].flagged = true;
+            }
+          }
+        }
+      }
     } else if (targetLevel > building.level) {
       // If we can't merge lots, still allow incremental level gain
       building.level = Math.min(targetLevel, building.level + 1);
@@ -1534,6 +1572,26 @@ export function simulateTick(state: GameState): GameState {
           // Use stricter spawn check that doesn't allow 'empty' tiles (prevents building overlap)
           if (canSpawnMultiTileBuilding(newGrid, x, y, candidateSize.width, candidateSize.height, tile.zone, size)) {
             applyBuildingFootprint(newGrid, x, y, candidate, tile.zone, 1, services);
+            // Flag tiles if on hilly terrain
+            let hasHillyTerrain = false;
+            for (let dy = 0; dy < candidateSize.height; dy++) {
+              for (let dx = 0; dx < candidateSize.width; dx++) {
+                if (newGrid[y + dy]?.[x + dx]?.terrain === 'hilly') {
+                  hasHillyTerrain = true;
+                  break;
+                }
+              }
+              if (hasHillyTerrain) break;
+            }
+            if (hasHillyTerrain) {
+              for (let dy = 0; dy < candidateSize.height; dy++) {
+                for (let dx = 0; dx < candidateSize.width; dx++) {
+                  if (newGrid[y + dy]?.[x + dx]) {
+                    newGrid[y + dy][x + dx].flagged = true;
+                  }
+                }
+              }
+            }
           }
         }
       } else if (tile.zone !== 'none' && tile.building.type !== 'grass') {
@@ -1979,6 +2037,7 @@ export function placeBuilding(
             if (clearX < state.gridSize && clearY < state.gridSize) {
               newGrid[clearY][clearX].building = createBuilding('grass');
               newGrid[clearY][clearX].zone = 'none';
+              newGrid[clearY][clearX].flagged = false;
             }
           }
         }
@@ -1990,6 +2049,7 @@ export function placeBuilding(
         // De-zoning resets to grass
         newGrid[y][x].zone = 'none';
         newGrid[y][x].building = createBuilding('grass');
+        newGrid[y][x].flagged = false;
       }
     } else {
       // Can't zone over existing buildings (only allow zoning on grass, tree, or road)
@@ -2024,6 +2084,26 @@ export function placeBuilding(
       if (shouldFlip) {
         newGrid[y][x].building.flipped = true;
       }
+      // Flag all tiles in the footprint if any are on hilly terrain
+      let hasHillyTerrain = false;
+      for (let dy = 0; dy < size.height; dy++) {
+        for (let dx = 0; dx < size.width; dx++) {
+          if (newGrid[y + dy]?.[x + dx]?.terrain === 'hilly') {
+            hasHillyTerrain = true;
+            break;
+          }
+        }
+        if (hasHillyTerrain) break;
+      }
+      if (hasHillyTerrain) {
+        for (let dy = 0; dy < size.height; dy++) {
+          for (let dx = 0; dx < size.width; dx++) {
+            if (newGrid[y + dy]?.[x + dx]) {
+              newGrid[y + dy][x + dx].flagged = true;
+            }
+          }
+        }
+      }
     } else {
       // Single tile building - check if tile is available
       // Can't place on water, existing buildings, or 'empty' tiles (part of multi-tile buildings)
@@ -2038,6 +2118,10 @@ export function placeBuilding(
       // Set flip for waterfront buildings to face the water
       if (shouldFlip) {
         newGrid[y][x].building.flipped = true;
+      }
+      // Flag the tile if it's on hilly terrain
+      if (newGrid[y][x].terrain === 'hilly') {
+        newGrid[y][x].flagged = true;
       }
     }
   }
@@ -2116,17 +2200,19 @@ export function bulldozeTile(state: GameState, x: number, y: number): GameState 
       for (let dx = 0; dx < size.width; dx++) {
         const clearX = origin.originX + dx;
         const clearY = origin.originY + dy;
-        if (clearX < state.gridSize && clearY < state.gridSize) {
-          newGrid[clearY][clearX].building = createBuilding('grass');
-          newGrid[clearY][clearX].zone = 'none';
-          // Don't remove subway when bulldozing surface buildings
-        }
+          if (clearX < state.gridSize && clearY < state.gridSize) {
+            newGrid[clearY][clearX].building = createBuilding('grass');
+            newGrid[clearY][clearX].zone = 'none';
+            newGrid[clearY][clearX].flagged = false;
+            // Don't remove subway when bulldozing surface buildings
+          }
       }
     }
   } else {
     // Single tile bulldoze
     newGrid[y][x].building = createBuilding('grass');
     newGrid[y][x].zone = 'none';
+    newGrid[y][x].flagged = false;
     // Don't remove subway when bulldozing surface buildings
   }
 

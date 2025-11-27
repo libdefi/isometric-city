@@ -210,6 +210,8 @@ export interface Building {
   flipped?: boolean; // Horizontally mirror the sprite (used for waterfront buildings to face water)
 }
 
+export type TerrainType = 'flat' | 'hilly';
+
 export interface Tile {
   x: number;
   y: number;
@@ -220,6 +222,8 @@ export interface Tile {
   crime: number;
   traffic: number;
   hasSubway: boolean;
+  terrain: TerrainType;
+  flagged?: boolean; // Flag indicator for buildings on hilly terrain
 }
 
 export interface Stats {

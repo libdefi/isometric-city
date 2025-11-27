@@ -5361,6 +5361,53 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         }
       }
       
+      // Draw grey mountain peaks on hilly terrain (before highlight)
+      if (tile.terrain === 'hilly' && tile.building.type === 'grass') {
+        // Draw mountain peaks as grey triangles
+        const peakHeight = h * 0.3;
+        const peakWidth = w * 0.25;
+        
+        // Draw 1-2 peaks randomly based on tile position
+        const seed = (tile.x * 31 + tile.y * 17) % 100;
+        const numPeaks = seed < 50 ? 1 : 2;
+        
+        for (let i = 0; i < numPeaks; i++) {
+          const peakX = w * 0.3 + (i * w * 0.4) + (seed % 20) * 0.01 * w;
+          const peakY = h * 0.2 + (seed % 15) * 0.01 * h;
+          
+          // Grey mountain peak colors
+          const peakTopColor = '#9ca3af';
+          const peakLeftColor = '#6b7280';
+          const peakRightColor = '#d1d5db';
+          
+          // Draw peak triangle (isometric style)
+          ctx.fillStyle = peakTopColor;
+          ctx.beginPath();
+          ctx.moveTo(peakX, peakY);
+          ctx.lineTo(peakX + peakWidth / 2, peakY + peakHeight / 2);
+          ctx.lineTo(peakX - peakWidth / 2, peakY + peakHeight / 2);
+          ctx.closePath();
+          ctx.fill();
+          
+          // Add shading for depth
+          ctx.fillStyle = peakLeftColor;
+          ctx.beginPath();
+          ctx.moveTo(peakX - peakWidth / 2, peakY + peakHeight / 2);
+          ctx.lineTo(peakX, peakY + peakHeight);
+          ctx.lineTo(peakX, peakY + peakHeight / 2);
+          ctx.closePath();
+          ctx.fill();
+          
+          ctx.fillStyle = peakRightColor;
+          ctx.beginPath();
+          ctx.moveTo(peakX + peakWidth / 2, peakY + peakHeight / 2);
+          ctx.lineTo(peakX, peakY + peakHeight);
+          ctx.lineTo(peakX, peakY + peakHeight / 2);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      
       // Highlight on hover/select (always draw, even if base was skipped)
       if (highlight) {
         // Draw a semi-transparent fill for better visibility
@@ -6030,6 +6077,33 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         ctx.beginPath();
         ctx.ellipse(fireX, fireY + 8, 5, 8, 0, 0, Math.PI * 2);
         ctx.fill();
+      }
+      
+      // Draw flag indicator for buildings on hilly terrain
+      if (tile.flagged && tile.terrain === 'hilly' && buildingType !== 'grass' && buildingType !== 'water' && buildingType !== 'road' && buildingType !== 'tree' && buildingType !== 'empty') {
+        const flagX = x + w * 0.85;
+        const flagY = y - h * 0.1;
+        const poleHeight = h * 0.4;
+        
+        // Draw flagpole
+        ctx.strokeStyle = '#757575';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(flagX, flagY);
+        ctx.lineTo(flagX, flagY + poleHeight);
+        ctx.stroke();
+        
+        // Draw flag (red flag with white border)
+        ctx.fillStyle = '#F44336';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(flagX, flagY);
+        ctx.lineTo(flagX + w * 0.12, flagY + poleHeight * 0.2);
+        ctx.lineTo(flagX, flagY + poleHeight * 0.4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
     }
     
