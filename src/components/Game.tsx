@@ -3186,8 +3186,8 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
           
           const buildingType = tile.building.type;
           
-          // Skip roads, grass, empty, water, and trees (these don't hide cars)
-          const skipTypes: BuildingType[] = ['road', 'grass', 'empty', 'water', 'tree'];
+          // Skip roads, grass, empty, water, trees, and hills (these don't hide cars)
+          const skipTypes: BuildingType[] = ['road', 'grass', 'empty', 'water', 'tree', 'hill'];
           if (skipTypes.includes(buildingType)) {
             continue;
           }
@@ -3299,7 +3299,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
           if (!tile) continue;
           
           const buildingType = tile.building.type;
-          const skipTypes: BuildingType[] = ['road', 'grass', 'empty', 'water', 'tree'];
+          const skipTypes: BuildingType[] = ['road', 'grass', 'empty', 'water', 'tree', 'hill'];
           if (skipTypes.includes(buildingType)) {
             continue;
           }
@@ -3836,7 +3836,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
           if (!tile) continue;
           
           const buildingType = tile.building.type;
-          const skipTypes: BuildingType[] = ['road', 'grass', 'empty', 'water', 'tree'];
+          const skipTypes: BuildingType[] = ['road', 'grass', 'empty', 'water', 'tree', 'hill'];
           if (skipTypes.includes(buildingType)) {
             continue;
           }
@@ -4620,14 +4620,15 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         'mountain_lodge', 'mountain_trailhead'];
       const isPark = allParkTypes.includes(tile.building.type) ||
                      (tile.building.type === 'empty' && isPartOfParkBuilding(tile.x, tile.y));
-      // Check if this is a building (not grass, empty, water, road, tree, or parks)
+      // Check if this is a building (not grass, empty, water, road, tree, hill, or parks)
       // Also check if it's part of a multi-tile building footprint
       const isDirectBuilding = !isPark &&
         tile.building.type !== 'grass' &&
         tile.building.type !== 'empty' &&
         tile.building.type !== 'water' &&
         tile.building.type !== 'road' &&
-        tile.building.type !== 'tree';
+        tile.building.type !== 'tree' &&
+        tile.building.type !== 'hill';
       const isPartOfBuilding = tile.building.type === 'empty' && isPartOfMultiTileBuilding(tile.x, tile.y);
       const isBuilding = isDirectBuilding || isPartOfBuilding;
       
@@ -4639,6 +4640,12 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         leftColor = '#1d4ed8';
         rightColor = '#3b82f6';
         strokeColor = '#1e3a8a';
+      } else if (tile.building.type === 'hill') {
+        // Grey mountain peaks
+        topColor = '#6b7280';
+        leftColor = '#4b5563';
+        rightColor = '#9ca3af';
+        strokeColor = '#374151';
       } else if (tile.building.type === 'road') {
         topColor = '#4a4a4a';
         leftColor = '#3a3a3a';

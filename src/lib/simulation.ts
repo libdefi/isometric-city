@@ -440,6 +440,23 @@ function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody
     }
   }
 
+  // Fifth pass: add hilly terrain with grey mountain peaks (avoiding water and trees)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (grid[y][x].building.type === 'water') continue; // Don't place hills on water
+      if (grid[y][x].building.type === 'tree') continue; // Don't place hills on trees
+      
+      // Use noise to generate hilly areas - higher frequency for more varied terrain
+      const hillNoise = perlinNoise(x * 0.15, y * 0.15, seed + 3000, 4);
+      // Create hills in areas with high noise values (peaks)
+      const isHill = hillNoise > 0.65 && Math.random() > 0.3;
+      
+      if (isHill) {
+        grid[y][x].building = createBuilding('hill');
+      }
+    }
+  }
+
   return { grid, waterBodies };
 }
 
@@ -548,11 +565,12 @@ function createTile(x: number, y: number, buildingType: BuildingType = 'grass'):
     crime: 0,
     traffic: 0,
     hasSubway: false,
+    flagged: false,
   };
 }
 
 // Building types that don't require construction (already complete when placed)
-const NO_CONSTRUCTION_TYPES: BuildingType[] = ['grass', 'empty', 'water', 'road', 'tree'];
+const NO_CONSTRUCTION_TYPES: BuildingType[] = ['grass', 'empty', 'water', 'road', 'tree', 'hill'];
 
 function createBuilding(type: BuildingType): Building {
   // Buildings that don't require construction start at 100% complete
@@ -777,9 +795,9 @@ function canSpawnMultiTileBuilding(
       if (!tile) return false;
       // Must be in the same zone
       if (tile.zone !== zone) return false;
-      // Can only spawn on grass or trees
+      // Can only spawn on grass, trees, or hills
       // NOT 'empty' - those are placeholders for existing multi-tile buildings
-      if (tile.building.type !== 'grass' && tile.building.type !== 'tree') {
+      if (tile.building.type !== 'grass' && tile.building.type !== 'tree' && tile.building.type !== 'hill') {
         return false;
       }
     }
@@ -1750,15 +1768,15 @@ function canPlaceMultiTileBuilding(
     return false;
   }
 
-  // Check all tiles are available (grass or tree only - not water, roads, or existing buildings)
+  // Check all tiles are available (grass, tree, or hill only - not water, roads, or existing buildings)
   // NOTE: 'empty' tiles are placeholders from multi-tile buildings, so we can't build on them
   // without first bulldozing the entire parent building
   for (let dy = 0; dy < height; dy++) {
     for (let dx = 0; dx < width; dx++) {
       const tile = grid[y + dy]?.[x + dx];
       if (!tile) return false;
-      // Can only build on grass or trees - roads must be bulldozed first
-      if (tile.building.type !== 'grass' && tile.building.type !== 'tree') {
+      // Can only build on grass, trees, or hills - roads must be bulldozed first
+      if (tile.building.type !== 'grass' && tile.building.type !== 'tree' && tile.building.type !== 'hill') {
         return false;
       }
     }
@@ -1768,10 +1786,10 @@ function canPlaceMultiTileBuilding(
 }
 
 // Footprint helpers for organic growth and merging
-// IMPORTANT: Only allow consolidation of truly empty land (grass, tree).
+// IMPORTANT: Only allow consolidation of truly empty land (grass, tree, hill).
 // Do NOT include 'empty' tiles - those are placeholders for existing multi-tile buildings!
 // Including 'empty' would allow buildings to overlap with each other during evolution.
-const MERGEABLE_TILE_TYPES = new Set<BuildingType>(['grass', 'tree']);
+const MERGEABLE_TILE_TYPES = new Set<BuildingType>(['grass', 'tree', 'hill']);
 
 // Small buildings that can be consolidated into larger ones when demand is high
 const CONSOLIDATABLE_BUILDINGS: Record<ZoneType, Set<BuildingType>> = {
@@ -1946,10 +1964,10 @@ export function placeBuilding(
   // Can't build on water
   if (tile.building.type === 'water') return state;
 
-  // Can't place roads on existing buildings (only allow on grass, tree, or existing roads)
+  // Can't place roads on existing buildings (only allow on grass, tree, hill, or existing roads)
   // Note: 'empty' tiles are part of multi-tile building footprints, so roads can't be placed there either
   if (buildingType === 'road') {
-    const allowedTypes: BuildingType[] = ['grass', 'tree', 'road'];
+    const allowedTypes: BuildingType[] = ['grass', 'tree', 'hill', 'road'];
     if (!allowedTypes.includes(tile.building.type)) {
       return state; // Can't place road on existing building
     }
@@ -1992,9 +2010,9 @@ export function placeBuilding(
         newGrid[y][x].building = createBuilding('grass');
       }
     } else {
-      // Can't zone over existing buildings (only allow zoning on grass, tree, or road)
+      // Can't zone over existing buildings (only allow zoning on grass, tree, hill, or road)
       // NOTE: 'empty' tiles are part of multi-tile buildings, so we can't zone them either
-      const allowedTypesForZoning: BuildingType[] = ['grass', 'tree', 'road'];
+      const allowedTypesForZoning: BuildingType[] = ['grass', 'tree', 'hill', 'road'];
       if (!allowedTypesForZoning.includes(tile.building.type)) {
         return state; // Can't zone over existing building or part of multi-tile building
       }
@@ -2019,7 +2037,34 @@ export function placeBuilding(
       if (!canPlaceMultiTileBuilding(newGrid, x, y, size.width, size.height, state.gridSize)) {
         return state; // Can't place here
       }
+      
+      // Check if any tiles in the footprint are hills - if so, flag all tiles
+      let hasHill = false;
+      for (let dy = 0; dy < size.height; dy++) {
+        for (let dx = 0; dx < size.width; dx++) {
+          const checkTile = newGrid[y + dy]?.[x + dx];
+          if (checkTile && checkTile.building.type === 'hill') {
+            hasHill = true;
+            break;
+          }
+        }
+        if (hasHill) break;
+      }
+      
       applyBuildingFootprint(newGrid, x, y, buildingType, 'none', 1);
+      
+      // Flag all tiles in the footprint if placed on hills
+      if (hasHill) {
+        for (let dy = 0; dy < size.height; dy++) {
+          for (let dx = 0; dx < size.width; dx++) {
+            const footprintTile = newGrid[y + dy]?.[x + dx];
+            if (footprintTile) {
+              footprintTile.flagged = true;
+            }
+          }
+        }
+      }
+      
       // Set flip for waterfront buildings to face the water
       if (shouldFlip) {
         newGrid[y][x].building.flipped = true;
@@ -2029,12 +2074,21 @@ export function placeBuilding(
       // Can't place on water, existing buildings, or 'empty' tiles (part of multi-tile buildings)
       // Note: 'road' is included here so roads can extend over existing roads,
       // but non-road buildings are already blocked from roads by the check above
-      const allowedTypes: BuildingType[] = ['grass', 'tree', 'road'];
+      const allowedTypes: BuildingType[] = ['grass', 'tree', 'hill', 'road'];
       if (!allowedTypes.includes(tile.building.type)) {
         return state; // Can't place on existing building or part of multi-tile building
       }
+      
+      // Flag the tile if placed on a hill
+      const wasHill = tile.building.type === 'hill';
+      
       newGrid[y][x].building = createBuilding(buildingType);
       newGrid[y][x].zone = 'none';
+      
+      if (wasHill) {
+        newGrid[y][x].flagged = true;
+      }
+      
       // Set flip for waterfront buildings to face the water
       if (shouldFlip) {
         newGrid[y][x].building.flipped = true;
