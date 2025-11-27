@@ -444,18 +444,116 @@ const ADVISOR_ICON_MAP: Record<string, React.ReactNode> = {
   jobs: <JobsIcon size={18} />,
 };
 
+const HOVER_MENU_CATEGORIES = new Set(['SERVICES', 'PARKS', 'UTILITIES', 'SPECIAL']);
+
+type SidebarHoverMenuProps = {
+  category: string;
+  tools: Tool[];
+  isOpen: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+  selectedTool: Tool;
+  availableMoney: number;
+  onSelectTool: (tool: Tool) => void;
+};
+
+const SidebarHoverMenu = React.memo(function SidebarHoverMenu({
+  category,
+  tools,
+  isOpen,
+  onOpen,
+  onClose,
+  selectedTool,
+  availableMoney,
+  onSelectTool,
+}: SidebarHoverMenuProps) {
+  const hasSelection = tools.includes(selectedTool);
+
+  const handleBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={onOpen}
+      onMouseLeave={onClose}
+      onFocus={onOpen}
+      onBlur={handleBlur}
+    >
+      <Button
+        type="button"
+        variant={hasSelection ? 'default' : 'ghost'}
+        className={`w-full justify-between px-3 py-2 h-auto text-sm ${
+          hasSelection ? 'bg-primary text-primary-foreground' : ''
+        }`}
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+      >
+        <span className="font-medium tracking-tight">{category}</span>
+        <span className="text-[10px] uppercase tracking-widest text-muted-foreground flex items-center gap-1">
+          <span>{tools.length} options</span>
+          <span
+            aria-hidden="true"
+            className={`text-lg leading-none transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}
+          >
+            &gt;
+          </span>
+        </span>
+      </Button>
+      {isOpen && (
+        <div className="absolute left-[calc(100%+0.5rem)] top-0 z-30 w-60 rounded-lg border border-border bg-card/95 backdrop-blur shadow-xl p-2">
+          <div className="text-[10px] font-semibold tracking-widest text-muted-foreground mb-1">
+            {category}
+          </div>
+          <div className="flex flex-col gap-0.5 max-h-96 overflow-y-auto pr-1">
+            {tools.map((tool) => {
+              const info = TOOL_INFO[tool];
+              if (!info) return null;
+              const isSelected = selectedTool === tool;
+              const canAfford = availableMoney >= info.cost;
+
+              return (
+                <Button
+                  key={tool}
+                  onClick={() => {
+                    onSelectTool(tool);
+                    onClose();
+                  }}
+                  disabled={!canAfford && info.cost > 0}
+                  variant={isSelected ? 'default' : 'ghost'}
+                  className={`w-full justify-between px-3 py-2 h-auto text-sm ${
+                    isSelected ? 'bg-primary text-primary-foreground' : ''
+                  }`}
+                  title={`${info.description}${info.cost > 0 ? ` - Cost: $${info.cost}` : ''}`}
+                >
+                  <span className="flex-1 text-left truncate">{info.name}</span>
+                  {info.cost > 0 && <span className="text-xs opacity-60">${info.cost}</span>}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 // Memoized Sidebar Component
 const Sidebar = React.memo(function Sidebar() {
   const { state, setTool, setActivePanel } = useGame();
   const { selectedTool, stats, activePanel } = state;
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   
-  const toolCategories = useMemo(() => ({
-    'TOOLS': ['select', 'bulldoze', 'road', 'subway'] as Tool[],
-    'ZONES': ['zone_residential', 'zone_commercial', 'zone_industrial', 'zone_dezone'] as Tool[],
-    'SERVICES': ['police_station', 'fire_station', 'hospital', 'school', 'university'] as Tool[],
-    'PARKS': ['park', 'park_large', 'tennis'] as Tool[],
-    'UTILITIES': ['power_plant', 'water_tower', 'subway_station'] as Tool[],
-    'SPECIAL': ['stadium', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
+  const toolCategories = useMemo<Record<string, Tool[]>>(() => ({
+    'TOOLS': ['select', 'bulldoze', 'road', 'subway'],
+    'ZONES': ['zone_residential', 'zone_commercial', 'zone_industrial', 'zone_dezone'],
+    'SERVICES': ['police_station', 'fire_station', 'hospital', 'school', 'university'],
+    'PARKS': ['park', 'park_large', 'tennis'],
+    'UTILITIES': ['power_plant', 'water_tower', 'subway_station'],
+    'SPECIAL': ['stadium', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'],
   }), []);
   
   return (
@@ -466,40 +564,57 @@ const Sidebar = React.memo(function Sidebar() {
         </div>
       </div>
       
-      <ScrollArea className="flex-1 py-2">
-        {Object.entries(toolCategories).map(([category, tools]) => (
-          <div key={category} className="mb-1">
-            <div className="px-4 py-2 text-[10px] font-bold tracking-widest text-muted-foreground">
-              {category}
+      <ScrollArea className="flex-1 py-2 overflow-visible">
+        {Object.entries(toolCategories).map(([category, tools]) => {
+          const useHoverMenu = HOVER_MENU_CATEGORIES.has(category);
+          
+          return (
+            <div key={category} className="mb-1">
+              <div className="px-4 py-2 text-[10px] font-bold tracking-widest text-muted-foreground">
+                {category}
+              </div>
+              <div className="px-2 flex flex-col gap-0.5">
+                {useHoverMenu ? (
+                  <SidebarHoverMenu
+                    category={category}
+                    tools={tools}
+                    isOpen={openMenu === category}
+                    onOpen={() => setOpenMenu(category)}
+                    onClose={() => setOpenMenu((current) => (current === category ? null : current))}
+                    selectedTool={selectedTool}
+                    availableMoney={stats.money}
+                    onSelectTool={setTool}
+                  />
+                ) : (
+                  tools.map((tool) => {
+                    const info = TOOL_INFO[tool];
+                    if (!info) return null; // Skip if tool info not found
+                    const isSelected = selectedTool === tool;
+                    const canAfford = stats.money >= info.cost;
+                    
+                    return (
+                      <Button
+                        key={tool}
+                        onClick={() => setTool(tool)}
+                        disabled={!canAfford && info.cost > 0}
+                        variant={isSelected ? 'default' : 'ghost'}
+                        className={`w-full justify-start gap-3 px-3 py-2 h-auto text-sm ${
+                          isSelected ? 'bg-primary text-primary-foreground' : ''
+                        }`}
+                        title={`${info.description}${info.cost > 0 ? ` - Cost: $${info.cost}` : ''}`}
+                      >
+                        <span className="flex-1 text-left truncate">{info.name}</span>
+                        {info.cost > 0 && (
+                          <span className="text-xs opacity-60">${info.cost}</span>
+                        )}
+                      </Button>
+                    );
+                  })
+                )}
+              </div>
             </div>
-            <div className="px-2 flex flex-col gap-0.5">
-              {tools.map(tool => {
-                const info = TOOL_INFO[tool];
-                if (!info) return null; // Skip if tool info not found
-                const isSelected = selectedTool === tool;
-                const canAfford = stats.money >= info.cost;
-                
-                return (
-                  <Button
-                    key={tool}
-                    onClick={() => setTool(tool)}
-                    disabled={!canAfford && info.cost > 0}
-                    variant={isSelected ? 'default' : 'ghost'}
-                    className={`w-full justify-start gap-3 px-3 py-2 h-auto text-sm ${
-                      isSelected ? 'bg-primary text-primary-foreground' : ''
-                    }`}
-                    title={`${info.description}${info.cost > 0 ? ` - Cost: $${info.cost}` : ''}`}
-                  >
-                    <span className="flex-1 text-left truncate">{info.name}</span>
-                    {info.cost > 0 && (
-                      <span className="text-xs opacity-60">${info.cost}</span>
-                    )}
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </ScrollArea>
       
       <div className="border-t border-sidebar-border p-2">
