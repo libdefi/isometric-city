@@ -665,7 +665,7 @@ function MiniStat({ icon, label, value }: { icon: React.ReactNode; label: string
 }
 
 // Canvas-based Minimap - Memoized
-const MiniMap = React.memo(function MiniMap() {
+const MiniMap = React.memo(function MiniMap({ viewport }: { viewport: ViewportInfo | null }) {
   const { state } = useGame();
   const { grid, gridSize } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -708,7 +708,31 @@ const MiniMap = React.memo(function MiniMap() {
         ctx.fillRect(x * scale, y * scale, Math.ceil(scale), Math.ceil(scale));
       }
     }
-  }, [grid, gridSize]);
+    
+    if (viewport && viewport.corners.length === 4) {
+      const toMiniPoint = (corner: { x: number; y: number }) => ({
+        x: corner.x * scale,
+        y: corner.y * scale,
+      });
+      
+      const points = viewport.corners.map(toMiniPoint);
+      
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 2]);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [grid, gridSize, viewport]);
   
   return (
     <Card className="absolute bottom-6 right-8 p-3 shadow-lg bg-card/90 border-border/70">
@@ -1718,6 +1742,11 @@ function AdvisorsPanel() {
 
 type OverlayMode = 'none' | 'power' | 'water' | 'fire' | 'police' | 'health' | 'education' | 'subway';
 
+type ViewportInfo = {
+  corners: { x: number; y: number }[];
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+};
+
 // Image cache for building sprites
 const imageCache = new Map<string, HTMLImageElement>();
 
@@ -1738,10 +1767,16 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 // Canvas-based Isometric Grid - HIGH PERFORMANCE
-function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: { 
+function CanvasIsometricGrid({ 
+  overlayMode, 
+  selectedTile, 
+  setSelectedTile,
+  onViewportChange,
+}: { 
   overlayMode: OverlayMode; 
   selectedTile: { x: number; y: number } | null; 
   setSelectedTile: (tile: { x: number; y: number } | null) => void;
+  onViewportChange?: (info: ViewportInfo) => void;
 }) {
   const { state, placeAtTile, connectToCity, currentSpritePack } = useGame();
   const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour } = state;
@@ -1815,6 +1850,46 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
   useEffect(() => {
     worldStateRef.current.canvasSize = canvasSize;
   }, [canvasSize]);
+
+  const updateViewportInfo = useCallback(() => {
+    if (!onViewportChange) return;
+    if (canvasSize.width <= 0 || canvasSize.height <= 0 || zoom === 0) return;
+    
+    const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+    const cssWidth = canvasSize.width / dpr;
+    const cssHeight = canvasSize.height / dpr;
+    const offsetX = offset.x / zoom;
+    const offsetY = offset.y / zoom;
+    
+    const toPoint = (screenX: number, screenY: number) => {
+      const { gridX, gridY } = screenToGrid(screenX, screenY, offsetX, offsetY);
+      return { x: gridX, y: gridY };
+    };
+    
+    const corners = [
+      toPoint(0, 0),
+      toPoint(cssWidth / zoom, 0),
+      toPoint(cssWidth / zoom, cssHeight / zoom),
+      toPoint(0, cssHeight / zoom),
+    ];
+    
+    const xs = corners.map((p) => p.x);
+    const ys = corners.map((p) => p.y);
+    
+    onViewportChange({
+      corners,
+      bounds: {
+        minX: Math.min(...xs),
+        maxX: Math.max(...xs),
+        minY: Math.min(...ys),
+        maxY: Math.max(...ys),
+      },
+    });
+  }, [onViewportChange, canvasSize.width, canvasSize.height, offset.x, offset.y, zoom]);
+
+  useEffect(() => {
+    updateViewportInfo();
+  }, [updateViewportInfo]);
 
   // Keyboard panning (WASD / arrow keys)
   useEffect(() => {
@@ -5477,6 +5552,7 @@ export default function Game() {
   const { state, setTool, setActivePanel, addMoney, addNotification } = useGame();
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
+  const [viewportInfo, setViewportInfo] = useState<ViewportInfo | null>(null);
   const isInitialMount = useRef(true);
   
   // Cheat code system
@@ -5644,9 +5720,14 @@ export default function Game() {
           <TopBar />
           <StatsPanel />
           <div className="flex-1 relative overflow-visible">
-            <CanvasIsometricGrid overlayMode={overlayMode} selectedTile={selectedTile} setSelectedTile={setSelectedTile} />
+            <CanvasIsometricGrid 
+              overlayMode={overlayMode} 
+              selectedTile={selectedTile} 
+              setSelectedTile={setSelectedTile} 
+              onViewportChange={setViewportInfo}
+            />
             <OverlayModeToggle overlayMode={overlayMode} setOverlayMode={setOverlayMode} />
-            <MiniMap />
+            <MiniMap viewport={viewportInfo} />
           </div>
         </div>
         

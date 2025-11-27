@@ -47,10 +47,13 @@ export default function HomePage() {
 
   // Check for saved game after mount (client-side only)
   useEffect(() => {
-    setIsChecking(false);
-    if (hasSavedGame()) {
-      setShowGame(true);
-    }
+    const frame = requestAnimationFrame(() => {
+      setIsChecking(false);
+      if (hasSavedGame()) {
+        setShowGame(true);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   if (isChecking) {
