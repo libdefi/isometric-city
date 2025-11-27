@@ -45,6 +45,8 @@ type GameContextValue = {
   currentSpritePack: SpritePack;
   availableSpritePacks: SpritePack[];
   setSpritePack: (packId: string) => void;
+  // City connections
+  connectToCity: (cityId: string) => void;
 };
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -108,6 +110,13 @@ function loadGameState(): GameState | null {
         // Migrate selectedTool if it's park_medium
         if (parsed.selectedTool === 'park_medium') {
           parsed.selectedTool = 'park_large';
+        }
+        // Ensure new fields exist for backward compatibility
+        if (!parsed.adjacentCities) {
+          parsed.adjacentCities = [];
+        }
+        if (!parsed.waterBodies) {
+          parsed.waterBodies = [];
         }
         return parsed as GameState;
       } else {
@@ -407,6 +416,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     saveSpritePackId(packId);
   }, []);
 
+  const connectToCity = useCallback((cityId: string) => {
+    setState((prev) => {
+      const updatedCities = prev.adjacentCities.map(city =>
+        city.id === cityId ? { ...city, connected: true } : city
+      );
+      return { ...prev, adjacentCities: updatedCities };
+    });
+  }, []);
+
   const newGame = useCallback((name?: string, size?: number) => {
     clearGameState(); // Clear saved state when starting fresh
     const fresh = createInitialGameState(size ?? 60, name || 'IsoCity');
@@ -425,6 +443,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           parsed.stats &&
           parsed.stats.money !== undefined &&
           parsed.stats.population !== undefined) {
+        // Ensure new fields exist for backward compatibility
+        if (!parsed.adjacentCities) {
+          parsed.adjacentCities = [];
+        }
+        if (!parsed.waterBodies) {
+          parsed.waterBodies = [];
+        }
         setState(parsed as GameState);
         return true;
       }
@@ -456,6 +481,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     currentSpritePack,
     availableSpritePacks: SPRITE_PACKS,
     setSpritePack,
+    // City connections
+    connectToCity,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
