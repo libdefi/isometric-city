@@ -537,6 +537,166 @@ export function getWaterAdjacency(
   return { hasWater, shouldFlip };
 }
 
+const ZONE_BASE_VALUES: Record<ZoneType, number> = {
+  none: 8,
+  residential: 24,
+  commercial: 20,
+  industrial: 14,
+};
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function hasAdjacentRoad(grid: Tile[][], x: number, y: number): boolean {
+  const offsets = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ];
+  for (const [dx, dy] of offsets) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (grid[ny]?.[nx]?.building.type === 'road') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getZoneDemandValue(stats: Stats | undefined, zone: ZoneType): number {
+  if (!stats) return 0;
+  switch (zone) {
+    case 'residential':
+      return stats.demand.residential;
+    case 'commercial':
+      return stats.demand.commercial;
+    case 'industrial':
+      return stats.demand.industrial;
+    default:
+      return 0;
+  }
+}
+
+function getWeightedNeighborScore(
+  grid: Tile[][],
+  x: number,
+  y: number,
+  radius: number,
+  mapper: (tile: Tile) => number
+): number {
+  let sum = 0;
+  const norm = radius + 0.5;
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      const tile = grid[ny]?.[nx];
+      if (!tile) continue;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > radius) continue;
+      const weight = Math.max(0, 1 - distance / norm);
+      sum += mapper(tile) * weight;
+    }
+  }
+  return sum;
+}
+
+function calculateTileLandValue(
+  grid: Tile[][],
+  x: number,
+  y: number,
+  services: ServiceCoverage,
+  stats?: Stats
+): number {
+  const tile = grid[y][x];
+  const buildingStats = BUILDING_STATS[tile.building.type] || { landValue: 0, pollution: 0, maxPop: 0, maxJobs: 0 };
+  const zoneBase = ZONE_BASE_VALUES[tile.zone] ?? 8;
+
+  const serviceAverage = (
+    services.police[y][x] +
+    services.fire[y][x] +
+    services.health[y][x] +
+    services.education[y][x]
+  ) / 4;
+  const serviceBonus = (serviceAverage / 100) * 18;
+  const utilityBonus = (services.power[y][x] ? 4 : -6) + (services.water[y][x] ? 3 : -5);
+
+  const demandBonus = (getZoneDemandValue(stats, tile.zone) / 100) * 12;
+  const cityMoodBonus = stats
+    ? ((stats.happiness - 50) / 50) * 6 + ((stats.environment - 50) / 50) * 4
+    : 0;
+
+  const amenityInfluence = getWeightedNeighborScore(
+    grid,
+    x,
+    y,
+    4,
+    neighbor => BUILDING_STATS[neighbor.building.type]?.landValue ?? 0
+  ) * 0.12;
+
+  const pollutionPenalty =
+    tile.pollution * 0.3 +
+    getWeightedNeighborScore(grid, x, y, 3, neighbor => neighbor.pollution) * 0.1;
+
+  const abandonmentPenalty = tile.building.abandoned ? 12 : 0;
+  const firePenalty = tile.building.onFire ? 15 : 0;
+  const undevelopedPenalty = tile.zone !== 'none' && (tile.building.type === 'grass' || tile.building.type === 'tree') ? 6 : 0;
+  const roadBonus = tile.zone !== 'none' ? (hasAdjacentRoad(grid, x, y) ? 2 : -4) : 0;
+
+  const buildingContribution = buildingStats.landValue * 0.75 + tile.building.level * 1.5;
+
+  const rawValue =
+    12 +
+    zoneBase +
+    buildingContribution +
+    serviceBonus +
+    utilityBonus +
+    demandBonus +
+    cityMoodBonus +
+    amenityInfluence +
+    roadBonus -
+    pollutionPenalty -
+    abandonmentPenalty -
+    firePenalty -
+    undevelopedPenalty;
+
+  return clampValue(rawValue, 0, 120);
+}
+
+function updateLandValues(grid: Tile[][], services: ServiceCoverage, stats?: Stats): void {
+  const size = grid.length;
+  const rawValues = Array.from({ length: size }, () => Array(size).fill(0));
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      rawValues[y][x] = calculateTileLandValue(grid, x, y, services, stats);
+    }
+  }
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let neighborSum = 0;
+      let neighborCount = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (grid[ny]?.[nx] !== undefined) {
+            neighborSum += rawValues[ny][nx];
+            neighborCount++;
+          }
+        }
+      }
+      const neighborAverage = neighborCount > 0 ? neighborSum / neighborCount : rawValues[y][x];
+      const blended = rawValues[y][x] * 0.65 + neighborAverage * 0.35;
+      grid[y][x].landValue = Math.round(clampValue(blended, 0, 120));
+    }
+  }
+}
+
 function createTile(x: number, y: number, buildingType: BuildingType = 'grass'): Tile {
   return {
     x,
@@ -638,6 +798,9 @@ function createAchievements(): Achievement[] {
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
+  const services = createServiceCoverage(size);
+  const stats = createInitialStats();
+  updateLandValues(grid, services, stats);
 
   return {
     grid,
@@ -652,9 +815,9 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     selectedTool: 'select',
     taxRate: 9,
     effectiveTaxRate: 9, // Start matching taxRate
-    stats: createInitialStats(),
+    stats,
     budget: createInitialBudget(),
-    services: createServiceCoverage(size),
+    services,
     notifications: [],
     achievements: createAchievements(),
     advisorMessages: [],
@@ -1477,6 +1640,7 @@ export function simulateTick(state: GameState): GameState {
 
   // Update service coverage
   const services = calculateServiceCoverage(newGrid, size);
+  updateLandValues(newGrid, services, state.stats);
 
   // Evolve buildings
   for (let y = 0; y < size; y++) {
