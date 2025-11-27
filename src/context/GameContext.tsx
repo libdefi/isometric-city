@@ -15,6 +15,7 @@ import {
   createInitialGameState,
   placeBuilding,
   simulateTick,
+  connectAdjacentCity,
 } from '@/lib/simulation';
 import {
   SPRITE_PACKS,
@@ -45,6 +46,8 @@ type GameContextValue = {
   currentSpritePack: SpritePack;
   availableSpritePacks: SpritePack[];
   setSpritePack: (packId: string) => void;
+  // Trade system
+  connectCity: (cityId: string, x: number, y: number) => void;
 };
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -108,6 +111,14 @@ function loadGameState(): GameState | null {
         // Migrate selectedTool if it's park_medium
         if (parsed.selectedTool === 'park_medium') {
           parsed.selectedTool = 'park_large';
+        }
+        // Migrate: add adjacentCities if missing
+        if (!parsed.adjacentCities) {
+          parsed.adjacentCities = [];
+        }
+        // Migrate: add waterBodies if missing (identify water bodies from existing grid)
+        if (!parsed.waterBodies) {
+          parsed.waterBodies = [];
         }
         return parsed as GameState;
       } else {
@@ -407,6 +418,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     saveSpritePackId(packId);
   }, []);
 
+  const connectCity = useCallback((cityId: string, x: number, y: number) => {
+    setState((prev) => connectAdjacentCity(prev, cityId, x, y));
+  }, []);
+
   const newGame = useCallback((name?: string, size?: number) => {
     clearGameState(); // Clear saved state when starting fresh
     const fresh = createInitialGameState(size ?? 60, name || 'IsoCity');
@@ -456,6 +471,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     currentSpritePack,
     availableSpritePacks: SPRITE_PACKS,
     setSpritePack,
+    // Trade system
+    connectCity,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

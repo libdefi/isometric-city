@@ -2,8 +2,8 @@
 
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '@/context/GameContext';
-import { Tool, TOOL_INFO, Tile, BuildingType } from '@/types/game';
-import { getBuildingSize } from '@/lib/simulation';
+import { Tool, TOOL_INFO, Tile, BuildingType, WaterBody, AdjacentCity, MapEdge } from '@/types/game';
+import { getBuildingSize, getTileEdge, getAdjacentCityForEdge } from '@/lib/simulation';
 import {
   PlayIcon,
   PauseIcon,
@@ -1616,8 +1616,8 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
   selectedTile: { x: number; y: number } | null; 
   setSelectedTile: (tile: { x: number; y: number } | null) => void;
 }) {
-  const { state, placeAtTile, currentSpritePack } = useGame();
-  const { grid, gridSize, selectedTool, speed } = state;
+  const { state, placeAtTile, currentSpritePack, connectCity } = useGame();
+  const { grid, gridSize, selectedTool, speed, waterBodies, adjacentCities } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1648,6 +1648,15 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
   const [dragStartTile, setDragStartTile] = useState<{ x: number; y: number } | null>(null);
   const [dragEndTile, setDragEndTile] = useState<{ x: number; y: number } | null>(null);
   const keysPressedRef = useRef<Set<string>>(new Set());
+  
+  // City connection popup state
+  const [cityConnectionPopup, setCityConnectionPopup] = useState<{
+    city: AdjacentCity;
+    x: number;
+    y: number;
+    screenX: number;
+    screenY: number;
+  } | null>(null);
 
   // Only zoning tools show the grid/rectangle selection visualization
   const showsDragGrid = ['zone_residential', 'zone_commercial', 'zone_industrial', 'zone_dezone'].includes(selectedTool);
@@ -2695,8 +2704,45 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
       ctx.fill();
     });
     
+    // Draw water body names (lakes and oceans)
+    if (waterBodies && waterBodies.length > 0 && zoom >= 0.4) {
+      waterBodies.forEach(waterBody => {
+        // Convert center grid coordinates to screen coordinates
+        const { screenX, screenY } = gridToScreen(waterBody.centerX, waterBody.centerY, 0, 0);
+        
+        // Check if in view
+        if (screenX < viewLeft - 200 || screenX > viewRight + 200 ||
+            screenY < viewTop - 100 || screenY > viewBottom + 100) {
+          return;
+        }
+        
+        // Determine font size based on water body size and type
+        const tileCount = waterBody.tiles.length;
+        const isOcean = waterBody.type === 'ocean';
+        const baseFontSize = isOcean ? 14 : 11;
+        const fontSize = Math.min(baseFontSize + Math.floor(tileCount / 20), isOcean ? 20 : 16);
+        
+        // Set up text style
+        ctx.font = `${fontSize}px "Georgia", "Times New Roman", serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Draw text with shadow for readability
+        const textX = screenX + TILE_WIDTH / 2;
+        const textY = screenY + TILE_HEIGHT / 2;
+        
+        // Shadow
+        ctx.fillStyle = 'rgba(0, 30, 60, 0.7)';
+        ctx.fillText(waterBody.name, textX + 1, textY + 1);
+        
+        // Main text - white with slight blue tint for water
+        ctx.fillStyle = isOcean ? '#e0f2ff' : '#ffffff';
+        ctx.fillText(waterBody.name, textX, textY);
+      });
+    }
+    
     ctx.restore();
-  }, [grid, gridSize, offset, zoom, hoveredTile, selectedTile, overlayMode, imagesLoaded, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack]);
+  }, [grid, gridSize, offset, zoom, hoveredTile, selectedTile, overlayMode, imagesLoaded, canvasSize, dragStartTile, dragEndTile, state.services, currentSpritePack, waterBodies]);
   
   // Animate decorative car traffic AND emergency vehicles on top of the base canvas
   useEffect(() => {
@@ -3786,7 +3832,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
     }
   }, [isPanning, isDragging, dragStart, offset, gridSize, zoom, showsDragGrid, supportsDragPlace, dragStartTile, lastPlacedTile, placeAtTile]);
   
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e?: React.MouseEvent) => {
     // Fill the drag rectangle when mouse is released (only for zoning tools)
     if (isDragging && dragStartTile && dragEndTile && showsDragGrid) {
       const minX = Math.min(dragStartTile.x, dragEndTile.x);
@@ -3801,14 +3847,39 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
         }
       }
     }
-    // For roads and other tools, placement already happened during drag
+    
+    // Check if a road was placed on an edge tile - show city connection popup
+    if (isDragging && selectedTool === 'road' && dragEndTile && e) {
+      const edgeTile = getTileEdge(dragEndTile.x, dragEndTile.y, gridSize);
+      if (edgeTile) {
+        // Check if there's an adjacent city for this edge that isn't already connected
+        const city = adjacentCities.find(c => c.edge === edgeTile && !c.connected);
+        if (city) {
+          // Check if the tile can have a road (not water)
+          const tile = grid[dragEndTile.y]?.[dragEndTile.x];
+          if (tile && tile.building.type !== 'water') {
+            // Show the popup
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (rect) {
+              setCityConnectionPopup({
+                city,
+                x: dragEndTile.x,
+                y: dragEndTile.y,
+                screenX: e.clientX - rect.left,
+                screenY: e.clientY - rect.top,
+              });
+            }
+          }
+        }
+      }
+    }
     
     setIsPanning(false);
     setIsDragging(false);
     setLastPlacedTile(null);
     setDragStartTile(null);
     setDragEndTile(null);
-  }, [isDragging, dragStartTile, dragEndTile, showsDragGrid, placeAtTile]);
+  }, [isDragging, dragStartTile, dragEndTile, showsDragGrid, placeAtTile, selectedTool, gridSize, adjacentCities, grid]);
   
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -3866,6 +3937,72 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile }: {
             </>
           )}
         </div>
+      )}
+      
+      {/* City Connection Popup */}
+      {cityConnectionPopup && (
+        <Card 
+          className="absolute z-50 p-4 shadow-xl bg-card border-2 border-primary/50 min-w-[280px]"
+          style={{
+            left: Math.min(cityConnectionPopup.screenX, canvasSize.width / (window.devicePixelRatio || 1) - 300),
+            top: Math.min(cityConnectionPopup.screenY - 100, canvasSize.height / (window.devicePixelRatio || 1) - 200),
+          }}
+        >
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-foreground">Connect to City</h3>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setCityConnectionPopup(null)}
+              >
+                <CloseIcon size={14} />
+              </Button>
+            </div>
+            
+            <div className="flex items-center gap-3 p-3 bg-secondary/50 rounded-md">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <RoadIcon size={20} className="text-primary" />
+              </div>
+              <div>
+                <div className="font-medium text-foreground">{cityConnectionPopup.city.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  Population: {cityConnectionPopup.city.population.toLocaleString()}
+                </div>
+                <div className="text-xs text-muted-foreground capitalize">
+                  {cityConnectionPopup.city.edge} border
+                </div>
+              </div>
+            </div>
+            
+            <p className="text-sm text-muted-foreground">
+              Connect your road network to {cityConnectionPopup.city.name} to enable trade and increase traffic.
+            </p>
+            
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setCityConnectionPopup(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  connectCity(
+                    cityConnectionPopup.city.id,
+                    cityConnectionPopup.x,
+                    cityConnectionPopup.y
+                  );
+                  setCityConnectionPopup(null);
+                }}
+              >
+                Connect
+              </Button>
+            </div>
+          </div>
+        </Card>
       )}
       
     </div>

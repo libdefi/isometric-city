@@ -199,6 +199,30 @@ export interface HistoryPoint {
   happiness: number;
 }
 
+// Adjacent city that can be connected via roads
+export type MapEdge = 'north' | 'east' | 'south' | 'west';
+
+export interface AdjacentCity {
+  id: string;
+  name: string;
+  population: number;
+  edge: MapEdge;
+  connected: boolean;
+  connectionTile?: { x: number; y: number };
+}
+
+// Water body (lake or ocean) with a name
+export type WaterBodyType = 'lake' | 'ocean';
+
+export interface WaterBody {
+  id: string;
+  name: string;
+  type: WaterBodyType;
+  tiles: { x: number; y: number }[];
+  centerX: number;
+  centerY: number;
+}
+
 export interface GameState {
   grid: Tile[][];
   gridSize: number;
@@ -219,6 +243,9 @@ export interface GameState {
   history: HistoryPoint[];
   activePanel: 'none' | 'budget' | 'statistics' | 'advisors' | 'achievements' | 'settings';
   disastersEnabled: boolean;
+  // Trade system data
+  adjacentCities: AdjacentCity[];
+  waterBodies: WaterBody[];
 }
 
 // Building evolution paths based on zone and level

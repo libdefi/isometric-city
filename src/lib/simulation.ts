@@ -17,7 +17,253 @@ import {
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
   INDUSTRIAL_BUILDINGS,
+  AdjacentCity,
+  WaterBody,
+  MapEdge,
 } from '@/types/game';
+
+// ============================================================================
+// NAME LISTS FOR PROCEDURAL GENERATION
+// ============================================================================
+
+// City names for adjacent cities
+const CITY_NAMES = [
+  'Springfield', 'Riverdale', 'Oakwood', 'Maplewood', 'Pinehurst', 'Lakeside',
+  'Hillcrest', 'Greenville', 'Fairview', 'Cedar Rapids', 'Brookhaven', 'Westwood',
+  'Eastgate', 'Northfield', 'Southport', 'Georgetown', 'Manchester', 'Brighton',
+  'Ashford', 'Clearwater', 'Sunrise', 'Sunset Valley', 'Harbor Town', 'Meadowbrook',
+  'Stonegate', 'Ridgemont', 'Bellmont', 'Fernwood', 'Willow Creek', 'Copper City',
+  'Silver Springs', 'Golden Valley', 'Crystal Lake', 'Emerald Hills', 'Ruby Ridge',
+  'Sapphire Bay', 'Diamond Point', 'Pearl Harbor', 'Coral Cove', 'Amber Falls',
+  'Crimson Peak', 'Azure Coast', 'Jade Mountain', 'Ivory Plains', 'Obsidian Valley',
+];
+
+// Lake names for inland water bodies
+const LAKE_NAMES = [
+  'Pine Lake', 'Crystal Lake', 'Mirror Lake', 'Silver Lake', 'Shadow Lake',
+  'Emerald Lake', 'Moonlight Lake', 'Sunset Lake', 'Echo Lake', 'Hidden Lake',
+  'Blue Lake', 'Clear Lake', 'Deep Lake', 'Long Lake', 'Round Lake',
+  'Spring Lake', 'Willow Lake', 'Cedar Lake', 'Birch Lake', 'Maple Lake',
+  'Oak Lake', 'Elm Lake', 'Swan Lake', 'Eagle Lake', 'Deer Lake',
+  'Bear Lake', 'Fox Lake', 'Wolf Lake', 'Trout Lake', 'Bass Lake',
+  'Pike Lake', 'Perch Lake', 'Catfish Lake', 'Lotus Lake', 'Lily Lake',
+  'Mystic Lake', 'Serenity Lake', 'Harmony Lake', 'Paradise Lake', 'Dream Lake',
+];
+
+// Ocean/Sea names for edge water bodies
+const OCEAN_NAMES = [
+  'Pacific Ocean', 'Atlantic Ocean', 'Arctic Sea', 'Baltic Sea', 'Caribbean Sea',
+  'Coral Sea', 'Adriatic Sea', 'Aegean Sea', 'Tyrrhenian Sea', 'Celtic Sea',
+  'North Sea', 'South Bay', 'East Bay', 'West Bay', 'Azure Bay',
+  'Crescent Bay', 'Thunder Bay', 'Sunset Bay', 'Emerald Bay', 'Golden Bay',
+  'Iron Coast', 'Silver Coast', 'Jade Coast', 'Amber Coast', 'Pearl Coast',
+  'Dragon Sea', 'Phoenix Bay', 'Neptune Waters', 'Poseidon Gulf', 'Triton Strait',
+  'Meridian Ocean', 'Horizon Sea', 'Endless Waters', 'Boundless Bay', 'Infinity Coast',
+];
+
+// Helper function to pick a random item from an array
+function pickRandom<T>(arr: T[], usedSet?: Set<string>, keyFn?: (item: T) => string): T {
+  if (!usedSet || !keyFn) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+  // Avoid duplicates
+  let attempts = 0;
+  while (attempts < 50) {
+    const item = arr[Math.floor(Math.random() * arr.length)];
+    const key = keyFn(item);
+    if (!usedSet.has(key)) {
+      usedSet.add(key);
+      return item;
+    }
+    attempts++;
+  }
+  // Fallback if all names are used
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// Generate adjacent cities for the map (only on some edges, not all)
+function generateAdjacentCities(): AdjacentCity[] {
+  const cities: AdjacentCity[] = [];
+  const edges: MapEdge[] = ['north', 'east', 'south', 'west'];
+  const usedNames = new Set<string>();
+  
+  // Each edge has a 50% chance to have an adjacent city
+  for (const edge of edges) {
+    if (Math.random() < 0.5) {
+      const name = pickRandom(CITY_NAMES, usedNames, (n) => n);
+      cities.push({
+        id: `city-${edge}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name,
+        population: Math.floor(5000 + Math.random() * 95000), // 5k - 100k
+        edge,
+        connected: false,
+      });
+    }
+  }
+  
+  return cities;
+}
+
+// Generate ocean on map edges (creates water along one or two edges)
+function generateOceans(grid: Tile[][], size: number, seed: number): { tiles: { x: number; y: number }[]; edge: MapEdge }[] {
+  const oceans: { tiles: { x: number; y: number }[]; edge: MapEdge }[] = [];
+  const edges: MapEdge[] = ['north', 'east', 'south', 'west'];
+  
+  // 60% chance to have ocean on at least one edge
+  if (Math.random() > 0.6) return oceans;
+  
+  // Pick 1-2 adjacent edges for ocean (oceans look better when they span corner)
+  const numOceanEdges = Math.random() < 0.6 ? 1 : 2;
+  const startEdgeIdx = Math.floor(Math.random() * 4);
+  const selectedEdges: MapEdge[] = [];
+  
+  for (let i = 0; i < numOceanEdges; i++) {
+    selectedEdges.push(edges[(startEdgeIdx + i) % 4]);
+  }
+  
+  const oceanNoise = (x: number, y: number) => perlinNoise(x, y, seed + 2000, 3);
+  
+  for (const edge of selectedEdges) {
+    const oceanTiles: { x: number; y: number }[] = [];
+    
+    // Ocean depth varies using noise for organic coastline
+    const baseDepth = 4 + Math.floor(Math.random() * 4); // 4-7 tiles deep
+    
+    if (edge === 'north') {
+      // Ocean on left side (y = const, x varies)
+      for (let x = 0; x < size; x++) {
+        const noiseVal = oceanNoise(x * 0.15, 0);
+        const depth = Math.floor(baseDepth + (noiseVal - 0.5) * 6);
+        for (let y = 0; y < Math.min(depth, size - 5); y++) {
+          if (grid[y][x].building.type !== 'water') {
+            grid[y][x].building = createBuilding('water');
+            grid[y][x].landValue = 60;
+            oceanTiles.push({ x, y });
+          }
+        }
+      }
+    } else if (edge === 'south') {
+      // Ocean on right side (y = const, x varies)
+      for (let x = 0; x < size; x++) {
+        const noiseVal = oceanNoise(x * 0.15, size);
+        const depth = Math.floor(baseDepth + (noiseVal - 0.5) * 6);
+        for (let y = size - 1; y >= Math.max(size - depth, 5); y--) {
+          if (grid[y][x].building.type !== 'water') {
+            grid[y][x].building = createBuilding('water');
+            grid[y][x].landValue = 60;
+            oceanTiles.push({ x, y });
+          }
+        }
+      }
+    } else if (edge === 'east') {
+      // Ocean on top side (x = const, y varies)
+      for (let y = 0; y < size; y++) {
+        const noiseVal = oceanNoise(0, y * 0.15);
+        const depth = Math.floor(baseDepth + (noiseVal - 0.5) * 6);
+        for (let x = 0; x < Math.min(depth, size - 5); x++) {
+          if (grid[y][x].building.type !== 'water') {
+            grid[y][x].building = createBuilding('water');
+            grid[y][x].landValue = 60;
+            oceanTiles.push({ x, y });
+          }
+        }
+      }
+    } else if (edge === 'west') {
+      // Ocean on bottom side (x = const, y varies)
+      for (let y = 0; y < size; y++) {
+        const noiseVal = oceanNoise(size, y * 0.15);
+        const depth = Math.floor(baseDepth + (noiseVal - 0.5) * 6);
+        for (let x = size - 1; x >= Math.max(size - depth, 5); x--) {
+          if (grid[y][x].building.type !== 'water') {
+            grid[y][x].building = createBuilding('water');
+            grid[y][x].landValue = 60;
+            oceanTiles.push({ x, y });
+          }
+        }
+      }
+    }
+    
+    if (oceanTiles.length > 0) {
+      oceans.push({ tiles: oceanTiles, edge });
+    }
+  }
+  
+  return oceans;
+}
+
+// Find contiguous water bodies and calculate their centers
+function identifyWaterBodies(grid: Tile[][], size: number, oceanEdges: MapEdge[]): WaterBody[] {
+  const waterBodies: WaterBody[] = [];
+  const visited = new Set<string>();
+  const usedLakeNames = new Set<string>();
+  const usedOceanNames = new Set<string>();
+  let waterBodyId = 0;
+  
+  // Helper to check if a tile is on the map edge
+  const isOnEdge = (x: number, y: number): boolean => {
+    return x === 0 || y === 0 || x === size - 1 || y === size - 1;
+  };
+  
+  // Flood fill to find contiguous water
+  const floodFill = (startX: number, startY: number): { x: number; y: number }[] => {
+    const tiles: { x: number; y: number }[] = [];
+    const queue: { x: number; y: number }[] = [{ x: startX, y: startY }];
+    
+    while (queue.length > 0) {
+      const { x, y } = queue.shift()!;
+      const key = `${x},${y}`;
+      
+      if (visited.has(key)) continue;
+      if (x < 0 || y < 0 || x >= size || y >= size) continue;
+      if (grid[y][x].building.type !== 'water') continue;
+      
+      visited.add(key);
+      tiles.push({ x, y });
+      
+      queue.push({ x: x - 1, y });
+      queue.push({ x: x + 1, y });
+      queue.push({ x, y: y - 1 });
+      queue.push({ x, y: y + 1 });
+    }
+    
+    return tiles;
+  };
+  
+  // Scan grid for water tiles
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (grid[y][x].building.type === 'water' && !visited.has(`${x},${y}`)) {
+        const tiles = floodFill(x, y);
+        
+        if (tiles.length > 0) {
+          // Calculate center
+          const centerX = tiles.reduce((sum, t) => sum + t.x, 0) / tiles.length;
+          const centerY = tiles.reduce((sum, t) => sum + t.y, 0) / tiles.length;
+          
+          // Determine if it's an ocean (touches edge) or lake (inland)
+          const touchesEdge = tiles.some(t => isOnEdge(t.x, t.y));
+          const type = touchesEdge ? 'ocean' : 'lake';
+          
+          // Pick appropriate name
+          const name = type === 'ocean' 
+            ? pickRandom(OCEAN_NAMES, usedOceanNames, (n) => n)
+            : pickRandom(LAKE_NAMES, usedLakeNames, (n) => n);
+          
+          waterBodies.push({
+            id: `water-${waterBodyId++}`,
+            name,
+            type,
+            tiles,
+            centerX,
+            centerY,
+          });
+        }
+      }
+    }
+  }
+  
+  return waterBodies;
+}
 
 // Perlin-like noise for terrain generation
 function noise2D(x: number, y: number, seed: number = 42): number {
@@ -210,8 +456,9 @@ function generateLakes(grid: Tile[][], size: number, seed: number): void {
   }
 }
 
-// Generate terrain - grass with scattered trees and lakes
-function generateTerrain(size: number): Tile[][] {
+// Generate terrain - grass with scattered trees, lakes, and oceans
+// Returns both the grid and the identified water bodies
+function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody[] } {
   const grid: Tile[][] = [];
   const seed = Math.random() * 1000;
 
@@ -224,10 +471,14 @@ function generateTerrain(size: number): Tile[][] {
     grid.push(row);
   }
   
-  // Second pass: add lakes (small contiguous water regions)
+  // Second pass: add oceans on map edges (before lakes to prevent overlap)
+  const oceanData = generateOceans(grid, size, seed);
+  const oceanEdges = oceanData.map(o => o.edge);
+  
+  // Third pass: add lakes (small contiguous water regions) - avoiding ocean areas
   generateLakes(grid, size, seed);
   
-  // Third pass: add scattered trees (avoiding water)
+  // Fourth pass: add scattered trees (avoiding water)
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (grid[y][x].building.type === 'water') continue; // Don't place trees on water
@@ -245,7 +496,10 @@ function generateTerrain(size: number): Tile[][] {
     }
   }
 
-  return grid;
+  // Fifth pass: identify all water bodies and assign names
+  const waterBodies = identifyWaterBodies(grid, size, oceanEdges);
+
+  return { grid, waterBodies };
 }
 
 // Check if a tile is near water
@@ -354,7 +608,8 @@ function createAchievements(): Achievement[] {
 }
 
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
-  const grid = generateTerrain(size);
+  const { grid, waterBodies } = generateTerrain(size);
+  const adjacentCities = generateAdjacentCities();
 
   return {
     grid,
@@ -376,6 +631,8 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     history: [],
     activePanel: 'none',
     disastersEnabled: true,
+    adjacentCities,
+    waterBodies,
   };
 }
 
@@ -1503,4 +1760,69 @@ export function bulldozeTile(state: GameState, x: number, y: number): GameState 
   }
 
   return { ...state, grid: newGrid };
+}
+
+// Connect an adjacent city via a road at the specified edge tile
+export function connectAdjacentCity(
+  state: GameState,
+  cityId: string,
+  connectionX: number,
+  connectionY: number
+): GameState {
+  const cityIndex = state.adjacentCities.findIndex(c => c.id === cityId);
+  if (cityIndex === -1) return state;
+  
+  const city = state.adjacentCities[cityIndex];
+  if (city.connected) return state; // Already connected
+  
+  // Verify the connection tile is on the correct edge
+  const { gridSize } = state;
+  const isOnCorrectEdge = (
+    (city.edge === 'north' && connectionY === 0) ||
+    (city.edge === 'south' && connectionY === gridSize - 1) ||
+    (city.edge === 'east' && connectionX === 0) ||
+    (city.edge === 'west' && connectionX === gridSize - 1)
+  );
+  
+  if (!isOnCorrectEdge) return state;
+  
+  // Check if the tile can have a road (not water)
+  const tile = state.grid[connectionY]?.[connectionX];
+  if (!tile || tile.building.type === 'water') return state;
+  
+  // Place a road at the connection point if there isn't one already
+  let newGrid = state.grid;
+  if (tile.building.type !== 'road') {
+    newGrid = state.grid.map(row => row.map(t => ({ ...t, building: { ...t.building } })));
+    newGrid[connectionY][connectionX].building = createBuilding('road');
+    newGrid[connectionY][connectionX].zone = 'none';
+  }
+  
+  // Update the city to be connected
+  const newAdjacentCities = [...state.adjacentCities];
+  newAdjacentCities[cityIndex] = {
+    ...city,
+    connected: true,
+    connectionTile: { x: connectionX, y: connectionY },
+  };
+  
+  return {
+    ...state,
+    grid: newGrid,
+    adjacentCities: newAdjacentCities,
+  };
+}
+
+// Get which edge a tile is on, if any
+export function getTileEdge(x: number, y: number, gridSize: number): MapEdge | null {
+  if (y === 0) return 'north';
+  if (y === gridSize - 1) return 'south';
+  if (x === 0) return 'east';
+  if (x === gridSize - 1) return 'west';
+  return null;
+}
+
+// Get the adjacent city for a given edge
+export function getAdjacentCityForEdge(state: GameState, edge: MapEdge): AdjacentCity | undefined {
+  return state.adjacentCities.find(c => c.edge === edge);
 }
