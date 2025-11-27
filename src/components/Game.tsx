@@ -1678,6 +1678,46 @@ function SettingsPanel() {
           
           <Separator />
           
+          {!showNewGameConfirm ? (
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={() => setShowNewGameConfirm(true)}
+            >
+              Start New Game
+            </Button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-muted-foreground text-sm text-center">Are you sure? This will reset all progress.</p>
+              <Input
+                value={newCityName}
+                onChange={(e) => setNewCityName(e.target.value)}
+                placeholder="New city name..."
+              />
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowNewGameConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => {
+                    newGame(newCityName || 'New City', gridSize);
+                    setActivePanel('none');
+                  }}
+                >
+                  Reset
+                </Button>
+              </div>
+            </div>
+          )}
+          
+          <Separator />
+          
           <div>
             <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">Export Game</div>
             <p className="text-muted-foreground text-xs mb-2">Copy your game state to share or backup</p>
@@ -1739,46 +1779,6 @@ function SettingsPanel() {
               Load Example State
             </Button>
           </div>
-          
-          <Separator />
-          
-          {!showNewGameConfirm ? (
-            <Button
-              variant="destructive"
-              className="w-full"
-              onClick={() => setShowNewGameConfirm(true)}
-            >
-              Start New Game
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-muted-foreground text-sm text-center">Are you sure? This will reset all progress.</p>
-              <Input
-                value={newCityName}
-                onChange={(e) => setNewCityName(e.target.value)}
-                placeholder="New city name..."
-              />
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setShowNewGameConfirm(false)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="destructive"
-                  className="flex-1"
-                  onClick={() => {
-                    newGame(newCityName || 'New City', gridSize);
-                    setActivePanel('none');
-                  }}
-                >
-                  Reset
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </DialogContent>
       
@@ -1904,19 +1904,52 @@ function loadSpriteImage(src: string, applyFilter: boolean = true): Promise<HTML
 // Sprite Test Panel
 function SpriteTestPanel({ onClose }: { onClose: () => void }) {
   const { currentSpritePack } = useGame();
+  const [activeTab, setActiveTab] = useState<string>('main');
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [spriteSheet, setSpriteSheet] = useState<HTMLImageElement | null>(null);
+  const [spriteSheets, setSpriteSheets] = useState<Record<string, HTMLImageElement | null>>({
+    main: null,
+    construction: null,
+    abandoned: null,
+    dense: null,
+    parks: null,
+    parksConstruction: null,
+  });
   
-  // Load sprite sheet from current pack
+  // Load all sprite sheets from current pack
   useEffect(() => {
-    const img = new Image();
-    img.onload = () => setSpriteSheet(img);
-    img.src = currentSpritePack.src;
+    const loadSheet = (src: string | undefined, key: string): Promise<void> => {
+      if (!src) {
+        setSpriteSheets(prev => ({ ...prev, [key]: null }));
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          setSpriteSheets(prev => ({ ...prev, [key]: img }));
+          resolve();
+        };
+        img.onerror = () => {
+          setSpriteSheets(prev => ({ ...prev, [key]: null }));
+          resolve();
+        };
+        img.src = src;
+      });
+    };
+    
+    Promise.all([
+      loadSheet(currentSpritePack.src, 'main'),
+      loadSheet(currentSpritePack.constructionSrc, 'construction'),
+      loadSheet(currentSpritePack.abandonedSrc, 'abandoned'),
+      loadSheet(currentSpritePack.denseSrc, 'dense'),
+      loadSheet(currentSpritePack.parksSrc, 'parks'),
+      loadSheet(currentSpritePack.parksConstructionSrc, 'parksConstruction'),
+    ]);
   }, [currentSpritePack]);
   
   // Draw sprite test grid
   useEffect(() => {
     const canvas = canvasRef.current;
+    const spriteSheet = spriteSheets[activeTab];
     if (!canvas || !spriteSheet) return;
     
     const ctx = canvas.getContext('2d', { 
@@ -1932,15 +1965,101 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
     ctx.imageSmoothingEnabled = false;
     ctx.imageSmoothingQuality = 'high';
     
-    // Grid setup - arrange sprites in rows of 5
-    const cols = 5;
-    const rows = Math.ceil(currentSpritePack.spriteOrder.length / cols);
     const tileW = 64;
     const tileH = tileW * 0.6;
     const padding = 30;
     const labelHeight = 20;
+    const cols = 5;
     
-    // Canvas size - account for sprite extending beyond base position
+    let itemsToRender: Array<{ label: string; coords: { sx: number; sy: number; sw: number; sh: number }; index?: number }> = [];
+    let sheetWidth = spriteSheet.naturalWidth || spriteSheet.width;
+    let sheetHeight = spriteSheet.naturalHeight || spriteSheet.height;
+    let sheetCols = currentSpritePack.cols;
+    let sheetRows = currentSpritePack.rows;
+    
+    if (activeTab === 'main') {
+      // Main sprite sheet - use spriteOrder
+      currentSpritePack.spriteOrder.forEach((spriteKey, index) => {
+        const buildingType = Object.entries(currentSpritePack.buildingToSprite).find(
+          ([, value]) => value === spriteKey
+        )?.[0] || spriteKey;
+        const coords = getSpriteCoords(buildingType, sheetWidth, sheetHeight, currentSpritePack);
+        if (coords) {
+          itemsToRender.push({ label: spriteKey, coords, index });
+        }
+      });
+    } else if (activeTab === 'construction' && currentSpritePack.constructionSrc) {
+      // Construction sprite sheet - same layout as main
+      currentSpritePack.spriteOrder.forEach((spriteKey, index) => {
+        const buildingType = Object.entries(currentSpritePack.buildingToSprite).find(
+          ([, value]) => value === spriteKey
+        )?.[0] || spriteKey;
+        const coords = getSpriteCoords(buildingType, sheetWidth, sheetHeight, currentSpritePack);
+        if (coords) {
+          itemsToRender.push({ label: `${spriteKey} (construction)`, coords, index });
+        }
+      });
+    } else if (activeTab === 'abandoned' && currentSpritePack.abandonedSrc) {
+      // Abandoned sprite sheet - same layout as main
+      currentSpritePack.spriteOrder.forEach((spriteKey, index) => {
+        const buildingType = Object.entries(currentSpritePack.buildingToSprite).find(
+          ([, value]) => value === spriteKey
+        )?.[0] || spriteKey;
+        const coords = getSpriteCoords(buildingType, sheetWidth, sheetHeight, currentSpritePack);
+        if (coords) {
+          itemsToRender.push({ label: `${spriteKey} (abandoned)`, coords, index });
+        }
+      });
+    } else if (activeTab === 'dense' && currentSpritePack.denseSrc && currentSpritePack.denseVariants) {
+      // Dense sprite sheet - use denseVariants mapping
+      sheetCols = currentSpritePack.cols;
+      sheetRows = currentSpritePack.rows;
+      const tileWidth = Math.floor(sheetWidth / sheetCols);
+      const tileHeight = Math.floor(sheetHeight / sheetRows);
+      
+      Object.entries(currentSpritePack.denseVariants).forEach(([buildingType, variants]) => {
+        variants.forEach((variant, variantIndex) => {
+          const sx = variant.col * tileWidth;
+          const sy = variant.row * tileHeight;
+          itemsToRender.push({
+            label: `${buildingType} (dense ${variantIndex + 1})`,
+            coords: { sx, sy, sw: tileWidth, sh: tileHeight },
+          });
+        });
+      });
+    } else if (activeTab === 'parks' && currentSpritePack.parksSrc && currentSpritePack.parksBuildings) {
+      // Parks sprite sheet - use parksBuildings mapping
+      sheetCols = currentSpritePack.parksCols || currentSpritePack.cols;
+      sheetRows = currentSpritePack.parksRows || currentSpritePack.rows;
+      const tileWidth = Math.floor(sheetWidth / sheetCols);
+      const tileHeight = Math.floor(sheetHeight / sheetRows);
+      
+      Object.entries(currentSpritePack.parksBuildings).forEach(([buildingType, pos]) => {
+        const sx = pos.col * tileWidth;
+        const sy = pos.row * tileHeight;
+        itemsToRender.push({
+          label: buildingType,
+          coords: { sx, sy, sw: tileWidth, sh: tileHeight },
+        });
+      });
+    } else if (activeTab === 'parksConstruction' && currentSpritePack.parksConstructionSrc && currentSpritePack.parksBuildings) {
+      // Parks construction sprite sheet - same layout as parks
+      sheetCols = currentSpritePack.parksCols || currentSpritePack.cols;
+      sheetRows = currentSpritePack.parksRows || currentSpritePack.rows;
+      const tileWidth = Math.floor(sheetWidth / sheetCols);
+      const tileHeight = Math.floor(sheetHeight / sheetRows);
+      
+      Object.entries(currentSpritePack.parksBuildings).forEach(([buildingType, pos]) => {
+        const sx = pos.col * tileWidth;
+        const sy = pos.row * tileHeight;
+        itemsToRender.push({
+          label: `${buildingType} (construction)`,
+          coords: { sx, sy, sw: tileWidth, sh: tileHeight },
+        });
+      });
+    }
+    
+    const rows = Math.ceil(itemsToRender.length / cols);
     const canvasWidth = cols * tileW * 2 + padding * 2;
     const canvasHeight = rows * (tileH * 3 + labelHeight) + padding * 2;
     
@@ -1960,15 +2079,11 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     
     // Draw grid and sprites
-    const sheetWidth = spriteSheet.naturalWidth || spriteSheet.width;
-    const sheetHeight = spriteSheet.naturalHeight || spriteSheet.height;
-    
-    currentSpritePack.spriteOrder.forEach((spriteKey, index) => {
+    itemsToRender.forEach((item, index) => {
       const col = index % cols;
       const row = Math.floor(index / cols);
       
       // Calculate isometric position for this grid cell
-      // Add offset to account for sprites extending left and up from base position
       const baseX = padding + tileW + col * tileW * 1.5;
       const baseY = padding + tileH + row * (tileH * 3 + labelHeight);
       
@@ -1987,46 +2102,75 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
       ctx.fillStyle = '#2a2a4a';
       ctx.fill();
       
-      // Find a building type that maps to this sprite key
-      const buildingType = Object.entries(currentSpritePack.buildingToSprite).find(
-        ([, value]) => value === spriteKey
-      )?.[0] || spriteKey;
+      // Calculate destination size preserving aspect ratio
+      const destWidth = tileW * 1.2;
+      const aspectRatio = item.coords.sh / item.coords.sw;
+      const destHeight = destWidth * aspectRatio;
       
-      // Get sprite coordinates using the current pack
-      const coords = getSpriteCoords(buildingType, sheetWidth, sheetHeight, currentSpritePack);
+      // Position: center on tile
+      const drawX = baseX - destWidth / 2;
+      const drawY = baseY + tileH / 2 - destHeight + destHeight * 0.15;
       
-      if (coords) {
-        // Calculate destination size preserving aspect ratio
-        const destWidth = tileW * 1.2;
-        const aspectRatio = coords.sh / coords.sw;
-        const destHeight = destWidth * aspectRatio;
-        
-        // Position: center on tile
-        const drawX = baseX - destWidth / 2;
-        const drawY = baseY + tileH / 2 - destHeight + destHeight * 0.15;
-        
-        // Draw sprite (using filtered version if available)
-        const filteredSpriteSheet = imageCache.get(`${currentSpritePack.src}_filtered`) || spriteSheet;
-        ctx.drawImage(
-          filteredSpriteSheet,
-          coords.sx, coords.sy, coords.sw, coords.sh,
-          Math.round(drawX), Math.round(drawY),
-          Math.round(destWidth), Math.round(destHeight)
-        );
-      }
+      // Draw sprite (using filtered version if available)
+      const sheetSrc = activeTab === 'main' ? currentSpritePack.src :
+                       activeTab === 'construction' ? currentSpritePack.constructionSrc :
+                       activeTab === 'abandoned' ? currentSpritePack.abandonedSrc :
+                       activeTab === 'dense' ? currentSpritePack.denseSrc :
+                       activeTab === 'parksConstruction' ? currentSpritePack.parksConstructionSrc :
+                       currentSpritePack.parksSrc;
+      const filteredSpriteSheet = sheetSrc ? (imageCache.get(`${sheetSrc}_filtered`) || spriteSheet) : spriteSheet;
+      
+      ctx.drawImage(
+        filteredSpriteSheet,
+        item.coords.sx, item.coords.sy, item.coords.sw, item.coords.sh,
+        Math.round(drawX), Math.round(drawY),
+        Math.round(destWidth), Math.round(destHeight)
+      );
       
       // Draw label
       ctx.fillStyle = '#888';
       ctx.font = '10px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(spriteKey, baseX, baseY + tileH + 16);
+      const labelLines = item.label.split(' ');
+      labelLines.forEach((line, i) => {
+        ctx.fillText(line, baseX, baseY + tileH + 16 + i * 10);
+      });
       
-      // Draw index
-      ctx.fillStyle = '#666';
-      ctx.font = '8px monospace';
-      ctx.fillText(`[${index}]`, baseX, baseY + tileH + 26);
+      // Draw index if available
+      if (item.index !== undefined) {
+        ctx.fillStyle = '#666';
+        ctx.font = '8px monospace';
+        ctx.fillText(`[${item.index}]`, baseX, baseY + tileH + 26 + labelLines.length * 10);
+      }
     });
-  }, [spriteSheet, currentSpritePack]);
+  }, [spriteSheets, activeTab, currentSpritePack]);
+  
+  const availableTabs = [
+    { id: 'main', label: 'Main', available: !!spriteSheets.main },
+    { id: 'construction', label: 'Construction', available: !!spriteSheets.construction },
+    { id: 'abandoned', label: 'Abandoned', available: !!spriteSheets.abandoned },
+    { id: 'dense', label: 'High Density', available: !!spriteSheets.dense },
+    { id: 'parks', label: 'Parks', available: !!spriteSheets.parks },
+    { id: 'parksConstruction', label: 'Parks Construction', available: !!spriteSheets.parksConstruction },
+  ].filter(tab => tab.available);
+  
+  // Set first available tab if current tab is not available
+  useEffect(() => {
+    if (availableTabs.length > 0 && !availableTabs.find(t => t.id === activeTab)) {
+      setActiveTab(availableTabs[0].id);
+    }
+  }, [availableTabs, activeTab]);
+  
+  const currentSheetInfo = activeTab === 'main' ? currentSpritePack.src :
+                          activeTab === 'construction' ? currentSpritePack.constructionSrc :
+                          activeTab === 'abandoned' ? currentSpritePack.abandonedSrc :
+                          activeTab === 'dense' ? currentSpritePack.denseSrc :
+                          activeTab === 'parksConstruction' ? currentSpritePack.parksConstructionSrc :
+                          currentSpritePack.parksSrc;
+  
+  const gridInfo = (activeTab === 'parks' || activeTab === 'parksConstruction') && currentSpritePack.parksCols && currentSpritePack.parksRows
+    ? `${currentSpritePack.parksCols}x${currentSpritePack.parksRows}`
+    : `${currentSpritePack.cols}x${currentSpritePack.rows}`;
   
   return (
     <Dialog open={true} onOpenChange={onClose}>
@@ -2034,9 +2178,19 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
         <DialogHeader>
           <DialogTitle>Sprite Test View</DialogTitle>
           <DialogDescription>
-            All {currentSpritePack.spriteOrder.length} sprites from &quot;{currentSpritePack.name}&quot;. Index shown in brackets.
+            View all sprite variants from &quot;{currentSpritePack.name}&quot;
           </DialogDescription>
         </DialogHeader>
+        
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${availableTabs.length}, 1fr)` }}>
+            {availableTabs.map(tab => (
+              <TabsTrigger key={tab.id} value={tab.id} className="text-xs">
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
         
         <div className="overflow-auto max-h-[70vh] bg-[#1a1a2e] rounded-lg">
           <canvas
@@ -2047,7 +2201,7 @@ function SpriteTestPanel({ onClose }: { onClose: () => void }) {
         </div>
         
         <div className="text-xs text-muted-foreground space-y-1">
-          <p>Sprite sheet: {currentSpritePack.src} ({currentSpritePack.cols}x{currentSpritePack.rows} grid)</p>
+          <p>Sprite sheet: {currentSheetInfo} ({gridInfo} grid)</p>
           <p>Edit offsets in <code className="bg-muted px-1 rounded">src/lib/renderConfig.ts</code> → each sprite pack&apos;s verticalOffsets</p>
         </div>
       </DialogContent>
