@@ -47,6 +47,7 @@ export default function HomePage() {
 
   // Check for saved game after mount (client-side only)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsChecking(false);
     if (hasSavedGame()) {
       setShowGame(true);
