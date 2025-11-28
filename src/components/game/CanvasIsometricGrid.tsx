@@ -2667,12 +2667,16 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         
         // Then draw the station building on top (use subway_station sprite)
         const activePack = getActiveSpritePack();
-        const coords = getSpriteCoords('subway_station');
-        if (coords && activePack.image) {
-          const { x: sx, y: sy, w: sw, h: sh } = coords;
-          const verticalOffset = SPRITE_VERTICAL_OFFSETS['subway_station'] || 0;
-          const horizontalOffset = SPRITE_HORIZONTAL_OFFSETS['subway_station'] || 0;
-          ctx.drawImage(activePack.image, sx, sy, sw, sh, x + horizontalOffset, y - verticalOffset, w, h + verticalOffset);
+        if (activePack.image) {
+          const sheetWidth = activePack.image.naturalWidth || activePack.image.width;
+          const sheetHeight = activePack.image.naturalHeight || activePack.image.height;
+          const coords = getSpriteCoords('subway_station', sheetWidth, sheetHeight);
+          if (coords) {
+            const { sx, sy, sw, sh } = coords;
+            const verticalOffset = SPRITE_VERTICAL_OFFSETS['subway_station'] || 0;
+            const horizontalOffset = SPRITE_HORIZONTAL_OFFSETS['subway_station'] || 0;
+            ctx.drawImage(activePack.image, sx, sy, sw, sh, x + horizontalOffset, y - verticalOffset, w, h + verticalOffset);
+          }
         }
         return;
       }
