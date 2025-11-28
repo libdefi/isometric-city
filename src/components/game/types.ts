@@ -294,3 +294,36 @@ export type WorldRenderState = {
 
 // Overlay modes for visualization
 export type OverlayMode = 'none' | 'power' | 'water' | 'fire' | 'police' | 'health' | 'education' | 'subway';
+
+// Traffic light types
+export type TrafficLightState = 'red' | 'yellow' | 'green';
+export type TrafficLightDirection = 'north' | 'east' | 'south' | 'west';
+
+export type TrafficLight = {
+  tileX: number;
+  tileY: number;
+  direction: TrafficLightDirection;
+  state: TrafficLightState;
+  timer: number; // Timer for state changes
+  phase: number; // Phase in the cycle (0-3 for 4-way intersection)
+};
+
+// Road network analysis types
+export type RoadType = 'single' | 'dual' | 'multi_lane' | 'highway';
+export type RoadOrientation = 'horizontal' | 'vertical' | 'intersection';
+
+export type RoadSegment = {
+  x: number;
+  y: number;
+  type: RoadType;
+  orientation: RoadOrientation;
+  lanes: number; // Number of lanes in each direction
+  hasTurnLanes: boolean;
+  hasDivider: boolean;
+  adjacentRoads: {
+    north: boolean;
+    east: boolean;
+    south: boolean;
+    west: boolean;
+  };
+};
