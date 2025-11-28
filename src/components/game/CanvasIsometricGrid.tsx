@@ -133,7 +133,7 @@ export interface CanvasIsometricGridProps {
 // Canvas-based Isometric Grid - HIGH PERFORMANCE
 export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMobile = false, navigationTarget, onNavigationComplete, onViewportChange }: CanvasIsometricGridProps) {
   const { state, placeAtTile, connectToCity, currentSpritePack } = useGame();
-  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour } = state;
+  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour, weather } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
   const lightingCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -203,6 +203,14 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   // Factory smog system refs
   const factorySmogRef = useRef<FactorySmog[]>([]);
   const smogLastGridVersionRef = useRef(-1); // Track when to rebuild factory list
+
+  // Weather system refs
+  const cloudParticlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; age: number; size: number; opacity: number }>>([]);
+  const rainParticlesRef = useRef<Array<{ x: number; y: number; vy: number; length: number }>>([]);
+  const snowParticlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; size: number }>>([]);
+  const lightningFlashRef = useRef<{ active: boolean; timer: number; intensity: number }>({ active: false, timer: 0, intensity: 0 });
+  const roadSnowAccumulationRef = useRef<Map<string, number>>(new Map()); // Track snow on roads/sidewalks
+  const roadRainSheenRef = useRef<Map<string, number>>(new Map()); // Track rain sheen on roads
 
   // Performance: Cache expensive grid calculations
   const cachedRoadTileCountRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
@@ -2768,6 +2776,364 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.restore();
   }, []);
 
+  // Update weather effects
+  const updateWeather = useCallback((delta: number) => {
+    const { speed: currentSpeed, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
+    
+    if (!currentGrid || currentGridSize <= 0 || currentSpeed === 0) {
+      return;
+    }
+    
+    const speedMultiplier = [0, 1, 2, 4][currentSpeed] || 1;
+    const adjustedDelta = delta * speedMultiplier;
+    
+    // Update lightning flash
+    if (weather.type === 'storm' && weather.intensity > 0.7) {
+      lightningFlashRef.current.timer += adjustedDelta;
+      if (!lightningFlashRef.current.active) {
+        // Random chance to trigger lightning flash
+        if (Math.random() < 0.02 * adjustedDelta * weather.intensity) {
+          lightningFlashRef.current.active = true;
+          lightningFlashRef.current.timer = 0;
+          lightningFlashRef.current.intensity = 0.3 + Math.random() * 0.4;
+        }
+      } else {
+        // Flash duration: 0.1-0.3 seconds
+        if (lightningFlashRef.current.timer > 0.1 + Math.random() * 0.2) {
+          lightningFlashRef.current.active = false;
+          lightningFlashRef.current.timer = 0;
+        }
+      }
+    } else {
+      lightningFlashRef.current.active = false;
+      lightningFlashRef.current.timer = 0;
+    }
+    
+    // Update clouds (for rain, storm, snow)
+    if (weather.type === 'rain' || weather.type === 'storm' || weather.type === 'snow') {
+      const maxClouds = isMobile ? 30 : 60;
+      const cloudSpawnRate = 0.5 * weather.intensity;
+      
+      // Spawn new clouds
+      if (cloudParticlesRef.current.length < maxClouds && Math.random() < cloudSpawnRate * adjustedDelta) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const dpr = window.devicePixelRatio || 1;
+          const { offset: currentOffset, zoom: currentZoom } = worldStateRef.current;
+          const viewWidth = canvas.width / (dpr * currentZoom);
+          const viewHeight = canvas.height / (dpr * currentZoom);
+          
+          cloudParticlesRef.current.push({
+            x: Math.random() * viewWidth - currentOffset.x / currentZoom,
+            y: -50 - Math.random() * 100, // Start above viewport
+            vx: (Math.random() - 0.5) * 20 * weather.intensity,
+            vy: 10 + Math.random() * 15,
+            age: 0,
+            size: 30 + Math.random() * 50,
+            opacity: 0.3 + Math.random() * 0.3,
+          });
+        }
+      }
+      
+      // Update existing clouds
+      cloudParticlesRef.current = cloudParticlesRef.current.filter(cloud => {
+        cloud.age += adjustedDelta;
+        cloud.x += cloud.vx * adjustedDelta;
+        cloud.y += cloud.vy * adjustedDelta;
+        
+        // Remove if too old or out of bounds
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const dpr = window.devicePixelRatio || 1;
+          const { offset: currentOffset, zoom: currentZoom } = worldStateRef.current;
+          const viewHeight = canvas.height / (dpr * currentZoom);
+          if (cloud.y > viewHeight - currentOffset.y / currentZoom + 100) {
+            return false;
+          }
+        }
+        
+        return cloud.age < 30; // Max age 30 seconds
+      });
+    } else {
+      // Clear clouds when weather clears
+      cloudParticlesRef.current = [];
+    }
+    
+    // Update rain particles
+    if (weather.type === 'rain' || weather.type === 'storm') {
+      const maxRain = isMobile ? 100 : 200;
+      const rainSpawnRate = 2 * weather.intensity;
+      
+      // Spawn new rain drops
+      if (rainParticlesRef.current.length < maxRain && Math.random() < rainSpawnRate * adjustedDelta) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const dpr = window.devicePixelRatio || 1;
+          const { offset: currentOffset, zoom: currentZoom } = worldStateRef.current;
+          const viewWidth = canvas.width / (dpr * currentZoom);
+          const viewHeight = canvas.height / (dpr * currentZoom);
+          
+          rainParticlesRef.current.push({
+            x: Math.random() * viewWidth - currentOffset.x / currentZoom,
+            y: -10,
+            vy: 200 + Math.random() * 300 * weather.intensity,
+            length: 5 + Math.random() * 10,
+          });
+        }
+      }
+      
+      // Update existing rain
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const { offset: currentOffset, zoom: currentZoom } = worldStateRef.current;
+        const viewHeight = canvas.height / (dpr * currentZoom);
+        
+        rainParticlesRef.current = rainParticlesRef.current.filter(rain => {
+          rain.y += rain.vy * adjustedDelta;
+          
+          // Remove if below viewport
+          if (rain.y > viewHeight - currentOffset.y / currentZoom + 50) {
+            // Update road rain sheen when rain hits road
+            const gridX = Math.floor((rain.x + currentOffset.x / currentZoom) / TILE_WIDTH + currentGridSize / 2);
+            const gridY = Math.floor((rain.y + currentOffset.y / currentZoom) / TILE_HEIGHT - currentGridSize / 2);
+            if (gridX >= 0 && gridX < currentGridSize && gridY >= 0 && gridY < currentGridSize) {
+              const tile = currentGrid[gridY]?.[gridX];
+              if (tile && tile.building.type === 'road') {
+                const key = `${gridX},${gridY}`;
+                const currentSheen = roadRainSheenRef.current.get(key) || 0;
+                roadRainSheenRef.current.set(key, Math.min(1, currentSheen + 0.01 * weather.intensity));
+              }
+            }
+            return false;
+          }
+          return true;
+        });
+      }
+      
+      // Decay road rain sheen
+      for (const [key, sheen] of roadRainSheenRef.current.entries()) {
+        if (sheen > 0) {
+          roadRainSheenRef.current.set(key, Math.max(0, sheen - 0.02 * adjustedDelta));
+        } else {
+          roadRainSheenRef.current.delete(key);
+        }
+      }
+    } else {
+      rainParticlesRef.current = [];
+      // Clear rain sheen when rain stops
+      roadRainSheenRef.current.clear();
+    }
+    
+    // Update snow particles
+    if (weather.type === 'snow') {
+      const maxSnow = isMobile ? 80 : 150;
+      const snowSpawnRate = 1.5 * weather.intensity;
+      
+      // Spawn new snowflakes
+      if (snowParticlesRef.current.length < maxSnow && Math.random() < snowSpawnRate * adjustedDelta) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const dpr = window.devicePixelRatio || 1;
+          const { offset: currentOffset, zoom: currentZoom } = worldStateRef.current;
+          const viewWidth = canvas.width / (dpr * currentZoom);
+          const viewHeight = canvas.height / (dpr * currentZoom);
+          
+          snowParticlesRef.current.push({
+            x: Math.random() * viewWidth - currentOffset.x / currentZoom,
+            y: -10,
+            vx: (Math.random() - 0.5) * 30,
+            vy: 30 + Math.random() * 50,
+            size: 2 + Math.random() * 3,
+          });
+        }
+      }
+      
+      // Update existing snow
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const { offset: currentOffset, zoom: currentZoom } = worldStateRef.current;
+        const viewHeight = canvas.height / (dpr * currentZoom);
+        
+        snowParticlesRef.current = snowParticlesRef.current.filter(snow => {
+          snow.x += snow.vx * adjustedDelta;
+          snow.y += snow.vy * adjustedDelta;
+          
+          // Remove if below viewport
+          if (snow.y > viewHeight - currentOffset.y / currentZoom + 50) {
+            // Update road/sidewalk snow accumulation when snow hits
+            const gridX = Math.floor((snow.x + currentOffset.x / currentZoom) / TILE_WIDTH + currentGridSize / 2);
+            const gridY = Math.floor((snow.y + currentOffset.y / currentZoom) / TILE_HEIGHT - currentGridSize / 2);
+            if (gridX >= 0 && gridX < currentGridSize && gridY >= 0 && gridY < currentGridSize) {
+              const tile = currentGrid[gridY]?.[gridX];
+              if (tile && (tile.building.type === 'road' || tile.zone !== 'none')) {
+                const key = `${gridX},${gridY}`;
+                const currentAccumulation = roadSnowAccumulationRef.current.get(key) || 0;
+                roadSnowAccumulationRef.current.set(key, Math.min(1, currentAccumulation + 0.005 * weather.intensity));
+              }
+            }
+            return false;
+          }
+          return true;
+        });
+      }
+      
+      // Decay snow accumulation (slowly melts)
+      for (const [key, accumulation] of roadSnowAccumulationRef.current.entries()) {
+        if (accumulation > 0) {
+          roadSnowAccumulationRef.current.set(key, Math.max(0, accumulation - 0.001 * adjustedDelta));
+        } else {
+          roadSnowAccumulationRef.current.delete(key);
+        }
+      }
+    } else {
+      snowParticlesRef.current = [];
+      // Clear snow accumulation when snow stops (melts)
+      for (const [key, accumulation] of roadSnowAccumulationRef.current.entries()) {
+        roadSnowAccumulationRef.current.set(key, Math.max(0, accumulation - 0.01 * adjustedDelta));
+        if (roadSnowAccumulationRef.current.get(key) === 0) {
+          roadSnowAccumulationRef.current.delete(key);
+        }
+      }
+    }
+  }, [weather, isMobile]);
+
+  // Draw weather effects
+  const drawWeather = useCallback((ctx: CanvasRenderingContext2D) => {
+    const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
+    const canvas = ctx.canvas;
+    const dpr = window.devicePixelRatio || 1;
+    
+    if (!currentGrid || currentGridSize <= 0) {
+      return;
+    }
+    
+    ctx.save();
+    ctx.scale(dpr * currentZoom, dpr * currentZoom);
+    ctx.translate(currentOffset.x / currentZoom, currentOffset.y / currentZoom);
+    
+    const viewWidth = canvas.width / (dpr * currentZoom);
+    const viewHeight = canvas.height / (dpr * currentZoom);
+    const viewLeft = -currentOffset.x / currentZoom - 100;
+    const viewTop = -currentOffset.y / currentZoom - 200;
+    const viewRight = viewWidth - currentOffset.x / currentZoom + 100;
+    const viewBottom = viewHeight - currentOffset.y / currentZoom + 100;
+    
+    // Draw lightning flash (full screen flash for storms)
+    if (lightningFlashRef.current.active && weather.type === 'storm') {
+      const flashOpacity = lightningFlashRef.current.intensity * (1 - lightningFlashRef.current.timer / 0.2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${flashOpacity})`;
+      ctx.fillRect(viewLeft, viewTop, viewRight - viewLeft, viewBottom - viewTop);
+    }
+    
+    // Draw clouds (for rain, storm, snow)
+    if (weather.type === 'rain' || weather.type === 'storm' || weather.type === 'snow') {
+      for (const cloud of cloudParticlesRef.current) {
+        if (cloud.x < viewLeft || cloud.x > viewRight || cloud.y < viewTop || cloud.y > viewBottom) {
+          continue;
+        }
+        
+        // Draw cloud as soft, fluffy circles
+        const opacity = cloud.opacity * (1 - cloud.age / 30);
+        ctx.fillStyle = `rgba(120, 120, 130, ${opacity})`;
+        ctx.beginPath();
+        ctx.arc(cloud.x, cloud.y, cloud.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add smaller overlapping circles for cloud texture
+        ctx.beginPath();
+        ctx.arc(cloud.x - cloud.size * 0.3, cloud.y, cloud.size * 0.7, 0, Math.PI * 2);
+        ctx.arc(cloud.x + cloud.size * 0.3, cloud.y, cloud.size * 0.7, 0, Math.PI * 2);
+        ctx.arc(cloud.x, cloud.y - cloud.size * 0.2, cloud.size * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Draw rain
+    if (weather.type === 'rain' || weather.type === 'storm') {
+      ctx.strokeStyle = `rgba(150, 180, 255, ${0.6 * weather.intensity})`;
+      ctx.lineWidth = 1;
+      for (const rain of rainParticlesRef.current) {
+        if (rain.x < viewLeft || rain.x > viewRight || rain.y < viewTop || rain.y > viewBottom) {
+          continue;
+        }
+        ctx.beginPath();
+        ctx.moveTo(rain.x, rain.y);
+        ctx.lineTo(rain.x, rain.y + rain.length);
+        ctx.stroke();
+      }
+    }
+    
+    // Draw snow
+    if (weather.type === 'snow') {
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * weather.intensity})`;
+      for (const snow of snowParticlesRef.current) {
+        if (snow.x < viewLeft || snow.x > viewRight || snow.y < viewTop || snow.y > viewBottom) {
+          continue;
+        }
+        ctx.beginPath();
+        ctx.arc(snow.x, snow.y, snow.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Draw road rain sheen
+    if (weather.type === 'rain' || weather.type === 'storm') {
+      for (const [key, sheen] of roadRainSheenRef.current.entries()) {
+        if (sheen <= 0) continue;
+        const [gridX, gridY] = key.split(',').map(Number);
+        if (gridX < 0 || gridX >= currentGridSize || gridY < 0 || gridY >= currentGridSize) continue;
+        
+        const tile = currentGrid[gridY]?.[gridX];
+        if (tile && tile.building.type === 'road') {
+          const { screenX, screenY } = gridToScreen(gridX, gridY, 0, 0);
+          if (screenX < viewLeft || screenX > viewRight || screenY < viewTop || screenY > viewBottom) continue;
+          
+          // Draw reflective sheen on road
+          ctx.fillStyle = `rgba(200, 220, 255, ${sheen * 0.3 * weather.intensity})`;
+          ctx.fillRect(screenX - TILE_WIDTH / 2, screenY - TILE_HEIGHT / 2, TILE_WIDTH, TILE_HEIGHT);
+        }
+      }
+    }
+    
+    // Draw snow accumulation on roads and sidewalks
+    if (weather.type === 'snow') {
+      for (const [key, accumulation] of roadSnowAccumulationRef.current.entries()) {
+        if (accumulation <= 0) continue;
+        const [gridX, gridY] = key.split(',').map(Number);
+        if (gridX < 0 || gridX >= currentGridSize || gridY < 0 || gridY >= currentGridSize) continue;
+        
+        const tile = currentGrid[gridY]?.[gridX];
+        if (tile && (tile.building.type === 'road' || tile.zone !== 'none')) {
+          const { screenX, screenY } = gridToScreen(gridX, gridY, 0, 0);
+          if (screenX < viewLeft || screenX > viewRight || screenY < viewTop || screenY > viewBottom) continue;
+          
+          // Draw snow accumulation (white layer)
+          const snowHeight = accumulation * 3; // Max 3 pixels of snow
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * accumulation})`;
+          
+          if (tile.building.type === 'road') {
+            // Snow on road (flat)
+            ctx.fillRect(screenX - TILE_WIDTH / 2, screenY - TILE_HEIGHT / 2, TILE_WIDTH, TILE_HEIGHT);
+          } else {
+            // Snow piles on sidewalks (slightly raised)
+            ctx.beginPath();
+            ctx.arc(screenX, screenY - snowHeight, TILE_WIDTH * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+            // Additional smaller piles
+            ctx.beginPath();
+            ctx.arc(screenX - TILE_WIDTH * 0.2, screenY - snowHeight * 0.8, TILE_WIDTH * 0.2, 0, Math.PI * 2);
+            ctx.arc(screenX + TILE_WIDTH * 0.2, screenY - snowHeight * 0.8, TILE_WIDTH * 0.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+    
+    ctx.restore();
+  }, [weather]);
+
   // Draw emergency vehicles (fire trucks and police cars)
   const drawEmergencyVehicles = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -4759,12 +5125,14 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         updateBoats(delta); // Update boats (marina/pier required)
         updateFireworks(delta, hour); // Update fireworks (nighttime only)
         updateSmog(delta); // Update factory smog particles
+        updateWeather(delta); // Update weather effects
         navLightFlashTimerRef.current += delta * 3; // Update nav light flash timer
       }
       drawCars(ctx);
       drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
       drawBoats(ctx); // Draw boats on water
       drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
+      drawWeather(ctx); // Draw weather effects (clouds, rain, snow, lightning)
       drawEmergencyVehicles(ctx); // Draw emergency vehicles!
       drawIncidentIndicators(ctx, delta); // Draw fire/crime incident indicators!
       drawHelicopters(ctx); // Draw helicopters (below planes, above ground)
@@ -4774,7 +5142,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, hour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, updateWeather, drawWeather, hour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {
