@@ -76,6 +76,20 @@ export function RoadIcon({ size = 18, className }: IconProps) {
   );
 }
 
+export function RailIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
+      {/* Rail bed */}
+      <rect {...baseStroke} x="4" y="6" width="16" height="12" rx="1" />
+      {/* Two parallel tracks */}
+      <path {...baseStroke} d="M8 8h8M8 10h8" strokeWidth="1.5" />
+      <path {...baseStroke} d="M8 14h8M8 16h8" strokeWidth="1.5" />
+      {/* Cross ties */}
+      <path {...baseStroke} d="M6 9h2M6 13h2M6 17h2M16 9h2M16 13h2M16 17h2" />
+    </svg>
+  );
+}
+
 export function TreeIcon({ size = 18, className }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={className}>
@@ -366,6 +380,7 @@ export const ToolIcons: Partial<Record<Tool, React.FC<IconProps>>> = {
   select: SelectIcon,
   bulldoze: BulldozeIcon,
   road: RoadIcon,
+  rail: RailIcon,
   subway: SubwayIcon,
   tree: TreeIcon,
   zone_residential: (props) => <ZoneIcon {...props} color="#22c55e" />, 
@@ -381,6 +396,7 @@ export const ToolIcons: Partial<Record<Tool, React.FC<IconProps>>> = {
   power_plant: PowerIcon,
   water_tower: WaterIcon,
   subway_station: SubwayStationIcon,
+  rail_station: SubwayStationIcon, // Use subway_station icon for now
   stadium: TrophyIcon,
   museum: MuseumIcon,
   airport: PlaneIcon,
