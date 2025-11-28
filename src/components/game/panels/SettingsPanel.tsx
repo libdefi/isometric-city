@@ -10,11 +10,6 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { SpriteTestPanel } from './SpriteTestPanel';
-import exampleState from '@/resources/example_state.json';
-import exampleState2 from '@/resources/example_state_2.json';
-import exampleState3 from '@/resources/example_state_3.json';
-import exampleState4 from '@/resources/example_state_4.json';
-import exampleState5 from '@/resources/example_state_5.json';
 
 export function SettingsPanel() {
   const { state, setActivePanel, setDisastersEnabled, newGame, loadState, exportState, currentSpritePack, availableSpritePacks, setSpritePack } = useGame();
@@ -270,7 +265,8 @@ export function SettingsPanel() {
             <Button
               variant="outline"
               className="w-full mt-2"
-              onClick={() => {
+              onClick={async () => {
+                const { default: exampleState } = await import('@/resources/example_state.json');
                 loadState(JSON.stringify(exampleState));
                 setActivePanel('none');
               }}
@@ -280,7 +276,8 @@ export function SettingsPanel() {
             <Button
               variant="outline"
               className="w-full mt-2"
-              onClick={() => {
+              onClick={async () => {
+                const { default: exampleState2 } = await import('@/resources/example_state_2.json');
                 loadState(JSON.stringify(exampleState2));
                 setActivePanel('none');
               }}
@@ -290,7 +287,8 @@ export function SettingsPanel() {
             <Button
               variant="outline"
               className="w-full mt-2"
-              onClick={() => {
+              onClick={async () => {
+                const { default: exampleState3 } = await import('@/resources/example_state_3.json');
                 loadState(JSON.stringify(exampleState3));
                 setActivePanel('none');
               }}
@@ -300,7 +298,8 @@ export function SettingsPanel() {
             <Button
               variant="outline"
               className="w-full mt-2"
-              onClick={() => {
+              onClick={async () => {
+                const { default: exampleState4 } = await import('@/resources/example_state_4.json');
                 loadState(JSON.stringify(exampleState4));
                 setActivePanel('none');
               }}
@@ -310,7 +309,8 @@ export function SettingsPanel() {
             <Button
               variant="outline"
               className="w-full mt-2"
-              onClick={() => {
+              onClick={async () => {
+                const { default: exampleState5 } = await import('@/resources/example_state_5.json');
                 loadState(JSON.stringify(exampleState5));
                 setActivePanel('none');
               }}
