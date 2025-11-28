@@ -15,7 +15,6 @@ import {
   DIRECTION_META,
   ROTOR_WASH_MAX_AGE,
   ROTOR_WASH_SPAWN_INTERVAL,
-  TILE_COLORS,
 } from '../../constants';
 import {
   findPathOnRoads,
