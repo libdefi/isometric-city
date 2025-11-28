@@ -144,12 +144,25 @@ function loadGameState(): GameState | null {
         if (parsed.selectedTool === 'park_medium') {
           parsed.selectedTool = 'park_large';
         }
-        // Ensure adjacentCities and waterBodies exist for backward compatibility
+        // Ensure adjacentCities, waterBodies, and hills exist for backward compatibility
         if (!parsed.adjacentCities) {
           parsed.adjacentCities = [];
         }
         if (!parsed.waterBodies) {
           parsed.waterBodies = [];
+        }
+        if (!parsed.hills) {
+          parsed.hills = [];
+        }
+        // Ensure elevation exists for all tiles
+        if (parsed.grid) {
+          for (let y = 0; y < parsed.grid.length; y++) {
+            for (let x = 0; x < parsed.grid[y].length; x++) {
+              if (parsed.grid[y][x]?.elevation === undefined) {
+                parsed.grid[y][x].elevation = 0;
+              }
+            }
+          }
         }
         // Ensure hour exists for day/night cycle
         if (parsed.hour === undefined) {
@@ -254,7 +267,8 @@ function saveSpritePackId(packId: string): void {
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   // Start with a default state, we'll load from localStorage after mount
-  const [state, setState] = useState<GameState>(() => createInitialGameState(60, 'IsoCity'));
+  // Default size is 66 (10% larger than original 60)
+  const [state, setState] = useState<GameState>(() => createInitialGameState(66, 'IsoCity'));
   
   const [hasExistingGame, setHasExistingGame] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -525,7 +539,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const newGame = useCallback((name?: string, size?: number) => {
     clearGameState(); // Clear saved state when starting fresh
-    const fresh = createInitialGameState(size ?? 60, name || 'IsoCity');
+    const fresh = createInitialGameState(size ?? 66, name || 'IsoCity'); // Default 66 (10% larger than original 60)
     setState(fresh);
   }, []);
 
@@ -548,11 +562,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (!parsed.waterBodies) {
           parsed.waterBodies = [];
         }
+        if (!parsed.hills) {
+          parsed.hills = [];
+        }
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9;
         }
-        // Migrate constructionProgress for existing buildings (they're already built)
+        // Migrate constructionProgress and elevation for existing tiles
         if (parsed.grid) {
           for (let y = 0; y < parsed.grid.length; y++) {
             for (let x = 0; x < parsed.grid[y].length; x++) {
@@ -562,6 +579,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
               // Migrate abandoned property for existing buildings (they're not abandoned)
               if (parsed.grid[y][x]?.building && parsed.grid[y][x].building.abandoned === undefined) {
                 parsed.grid[y][x].building.abandoned = false;
+              }
+              // Migrate elevation for tiles (default to 0)
+              if (parsed.grid[y][x]?.elevation === undefined) {
+                parsed.grid[y][x].elevation = 0;
               }
             }
           }

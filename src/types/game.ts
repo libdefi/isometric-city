@@ -220,6 +220,7 @@ export interface Tile {
   crime: number;
   traffic: number;
   hasSubway: boolean;
+  elevation: number; // Terrain elevation (0 = flat, positive = hill height in tiles)
 }
 
 export interface Stats {
@@ -315,6 +316,14 @@ export interface WaterBody {
   centerY: number;
 }
 
+export interface Hill {
+  id: string;
+  centerX: number;
+  centerY: number;
+  radius: number; // Diameter is 10-15 tiles, so radius is 5-7.5
+  peakHeight: number; // 3-8 tiles of elevation
+}
+
 export interface GameState {
   grid: Tile[][];
   gridSize: number;
@@ -339,6 +348,7 @@ export interface GameState {
   disastersEnabled: boolean;
   adjacentCities: AdjacentCity[];
   waterBodies: WaterBody[];
+  hills: Hill[]; // Mountain/hill terrain features
 }
 
 // Building evolution paths based on zone and level

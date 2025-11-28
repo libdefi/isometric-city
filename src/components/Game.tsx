@@ -5969,16 +5969,46 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       ctx.lineCap = 'butt';
     }
     
-    // Draw isometric tile base
+    // Helper function to interpolate between two colors based on a factor (0-1)
+    function lerpColor(color1: string, color2: string, factor: number): string {
+      // Parse hex colors
+      const r1 = parseInt(color1.slice(1, 3), 16);
+      const g1 = parseInt(color1.slice(3, 5), 16);
+      const b1 = parseInt(color1.slice(5, 7), 16);
+      const r2 = parseInt(color2.slice(1, 3), 16);
+      const g2 = parseInt(color2.slice(3, 5), 16);
+      const b2 = parseInt(color2.slice(5, 7), 16);
+      
+      const r = Math.round(r1 + (r2 - r1) * factor);
+      const g = Math.round(g1 + (g2 - g1) * factor);
+      const b = Math.round(b1 + (b2 - b1) * factor);
+      
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    }
+    
+    // Draw isometric tile base with elevation support
     function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, highlight: boolean, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
       const w = TILE_WIDTH;
       const h = TILE_HEIGHT;
+      const elevation = tile.elevation || 0;
+      // Height offset per elevation unit (in pixels)
+      const elevationHeightFactor = TILE_HEIGHT * 0.5;
+      const elevationOffset = elevation * elevationHeightFactor;
+      
+      // Adjust y position for elevation (higher elevation = drawn higher on screen)
+      const adjustedY = y - elevationOffset;
       
       // Determine tile colors (top face and shading)
       let topColor = '#4a7c3f'; // grass
       let leftColor = '#3d6634';
       let rightColor = '#5a8f4f';
       let strokeColor = '#2d4a26';
+      
+      // Grey mountain colors for elevation
+      const mountainTopColor = '#9ca3af'; // light grey for peaks
+      const mountainLeftColor = '#6b7280';
+      const mountainRightColor = '#d1d5db';
+      const mountainStrokeColor = '#4b5563';
 
       // These get grey bases: baseball_stadium, community_center, swimming_pool, office_building_small
       const allParkTypes = ['park', 'park_large', 'tennis', 'basketball_courts', 'playground_small',
@@ -6060,17 +6090,57 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         strokeColor = '#f59e0b';
       }
       
+      // Apply grey mountain coloring based on elevation
+      // At elevation 0: normal grass color
+      // At elevation 8 (max): full grey mountain color
+      if (elevation > 0 && tile.building.type !== 'water' && tile.building.type !== 'road' && !hasGreyBase) {
+        const elevationFactor = Math.min(1, elevation / 6); // Normalize elevation to 0-1 range
+        topColor = lerpColor(topColor, mountainTopColor, elevationFactor);
+        leftColor = lerpColor(leftColor, mountainLeftColor, elevationFactor);
+        rightColor = lerpColor(rightColor, mountainRightColor, elevationFactor);
+        strokeColor = lerpColor(strokeColor, mountainStrokeColor, elevationFactor);
+      }
+      
       // Skip drawing green base for grass/empty tiles adjacent to water (will be drawn later over water)
       const shouldSkipDrawing = skipGreenBase && (tile.building.type === 'grass' || tile.building.type === 'empty');
       
-      // Draw the isometric diamond (top face)
+      // Draw elevation side faces first (they go behind the top face)
+      if (elevationOffset > 0 && !shouldSkipDrawing) {
+        // Left face (bottom-left edge of diamond going down)
+        ctx.fillStyle = leftColor;
+        ctx.beginPath();
+        ctx.moveTo(x, adjustedY + h / 2); // Left corner of top face
+        ctx.lineTo(x + w / 2, adjustedY + h); // Bottom corner of top face
+        ctx.lineTo(x + w / 2, y + h); // Bottom corner at ground level
+        ctx.lineTo(x, y + h / 2); // Left corner at ground level
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+        
+        // Right face (bottom-right edge of diamond going down)
+        ctx.fillStyle = rightColor;
+        ctx.beginPath();
+        ctx.moveTo(x + w, adjustedY + h / 2); // Right corner of top face
+        ctx.lineTo(x + w / 2, adjustedY + h); // Bottom corner of top face
+        ctx.lineTo(x + w / 2, y + h); // Bottom corner at ground level
+        ctx.lineTo(x + w, y + h / 2); // Right corner at ground level
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      
+      // Draw the isometric diamond (top face) at elevated position
       if (!shouldSkipDrawing) {
         ctx.fillStyle = topColor;
         ctx.beginPath();
-        ctx.moveTo(x + w / 2, y);
-        ctx.lineTo(x + w, y + h / 2);
-        ctx.lineTo(x + w / 2, y + h);
-        ctx.lineTo(x, y + h / 2);
+        ctx.moveTo(x + w / 2, adjustedY);
+        ctx.lineTo(x + w, adjustedY + h / 2);
+        ctx.lineTo(x + w / 2, adjustedY + h);
+        ctx.lineTo(x, adjustedY + h / 2);
         ctx.closePath();
         ctx.fill();
         
@@ -6099,10 +6169,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         // Draw a semi-transparent fill for better visibility
         ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
         ctx.beginPath();
-        ctx.moveTo(x + w / 2, y);
-        ctx.lineTo(x + w, y + h / 2);
-        ctx.lineTo(x + w / 2, y + h);
-        ctx.lineTo(x, y + h / 2);
+        ctx.moveTo(x + w / 2, adjustedY);
+        ctx.lineTo(x + w, adjustedY + h / 2);
+        ctx.lineTo(x + w / 2, adjustedY + h);
+        ctx.lineTo(x, adjustedY + h / 2);
         ctx.closePath();
         ctx.fill();
         
@@ -6427,9 +6497,17 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       const w = TILE_WIDTH;
       const h = TILE_HEIGHT;
       
-      // Handle roads separately with adjacency
+      // Calculate elevation offset (buildings on hills are drawn higher)
+      const elevation = tile.elevation || 0;
+      const elevationHeightFactor = TILE_HEIGHT * 0.5;
+      const elevationOffset = elevation * elevationHeightFactor;
+      
+      // Adjust y position for elevation (higher elevation = drawn higher on screen)
+      const adjustedY = y - elevationOffset;
+      
+      // Handle roads separately with adjacency (pass adjusted Y for elevation)
       if (buildingType === 'road') {
-        drawRoad(ctx, x, y, tile.x, tile.y);
+        drawRoad(ctx, x, adjustedY, tile.x, tile.y);
         return;
       }
       
@@ -6443,9 +6521,9 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         if (buildingType === 'water') {
           const waterImage = imageCache.get('/assets/water.png');
           if (waterImage) {
-            // Center the water sprite on the tile
+            // Center the water sprite on the tile (use adjusted Y for elevation)
             const tileCenterX = x + w / 2;
-            const tileCenterY = y + h / 2;
+            const tileCenterY = adjustedY + h / 2;
             
             // Scale to 71.5% of tile size (65% * 1.1 = 10% expansion)
             const destWidth = w * 1.2 * 0.715;
@@ -6576,8 +6654,9 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
               
               // Calculate draw position for multi-tile buildings
               // Multi-tile buildings need to be positioned at the front-most corner
+              // Use adjustedY to account for elevation
               let drawPosX = x;
-              let drawPosY = y;
+              let drawPosY = adjustedY;
               
               if (isMultiTile) {
                 // Calculate offset to position sprite at the front-most visible corner
@@ -6587,7 +6666,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
                 const screenOffsetX = (frontmostOffsetX - frontmostOffsetY) * (w / 2);
                 const screenOffsetY = (frontmostOffsetX + frontmostOffsetY) * (h / 2);
                 drawPosX = x + screenOffsetX;
-                drawPosY = y + screenOffsetY;
+                drawPosY = adjustedY + screenOffsetY;
               }
               
               // Calculate destination size preserving aspect ratio of source sprite
@@ -6744,10 +6823,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         }
       }
       
-      // Draw fire effect
+      // Draw fire effect (use adjustedY for elevation)
       if (tile.building.onFire) {
         const fireX = x + w / 2;
-        const fireY = y - 10;
+        const fireY = adjustedY - 10;
         
         ctx.fillStyle = 'rgba(255, 100, 0, 0.5)';
         ctx.beginPath();

@@ -15,6 +15,7 @@ import {
   Notification,
   AdjacentCity,
   WaterBody,
+  Hill,
   BUILDING_STATS,
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
@@ -366,6 +367,122 @@ function generateOceans(grid: Tile[][], size: number, seed: number): WaterBody[]
   return waterBodies;
 }
 
+// Generate hills/mountains on the map
+// Hills are 10-15 tiles in diameter, 3-8 tiles in height
+// Each map has 0-3 hills
+function generateHills(grid: Tile[][], size: number, seed: number): Hill[] {
+  const hills: Hill[] = [];
+  
+  // Random number of hills (0-3)
+  const numHills = Math.floor(Math.random() * 4); // 0, 1, 2, or 3 hills
+  
+  if (numHills === 0) {
+    return hills;
+  }
+  
+  // Minimum distance from edges and between hills
+  const minDistFromEdge = Math.max(10, Math.floor(size * 0.15));
+  const minDistBetweenHills = Math.max(15, Math.floor(size * 0.25));
+  
+  for (let i = 0; i < numHills; i++) {
+    let attempts = 0;
+    const maxAttempts = 50;
+    
+    while (attempts < maxAttempts) {
+      attempts++;
+      
+      // Random center position
+      const centerX = minDistFromEdge + Math.floor(Math.random() * (size - 2 * minDistFromEdge));
+      const centerY = minDistFromEdge + Math.floor(Math.random() * (size - 2 * minDistFromEdge));
+      
+      // Check distance from other hills
+      let tooClose = false;
+      for (const hill of hills) {
+        const dist = Math.sqrt((centerX - hill.centerX) ** 2 + (centerY - hill.centerY) ** 2);
+        if (dist < minDistBetweenHills) {
+          tooClose = true;
+          break;
+        }
+      }
+      
+      if (tooClose) continue;
+      
+      // Check that hill won't overlap with water bodies
+      // Radius is 5-7.5 tiles (diameter 10-15)
+      const radius = 5 + Math.random() * 2.5;
+      let overWater = false;
+      
+      for (let dy = -Math.ceil(radius); dy <= Math.ceil(radius); dy++) {
+        for (let dx = -Math.ceil(radius); dx <= Math.ceil(radius); dx++) {
+          const tx = centerX + dx;
+          const ty = centerY + dy;
+          if (tx >= 0 && tx < size && ty >= 0 && ty < size) {
+            if (grid[ty][tx].building.type === 'water') {
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist <= radius) {
+                overWater = true;
+                break;
+              }
+            }
+          }
+        }
+        if (overWater) break;
+      }
+      
+      if (overWater) continue;
+      
+      // Generate hill with random peak height (3-8 tiles)
+      const peakHeight = 3 + Math.floor(Math.random() * 6);
+      
+      const hill: Hill = {
+        id: `hill-${i}`,
+        centerX,
+        centerY,
+        radius,
+        peakHeight,
+      };
+      
+      hills.push(hill);
+      
+      // Apply elevation to tiles
+      for (let dy = -Math.ceil(radius * 1.2); dy <= Math.ceil(radius * 1.2); dy++) {
+        for (let dx = -Math.ceil(radius * 1.2); dx <= Math.ceil(radius * 1.2); dx++) {
+          const tx = centerX + dx;
+          const ty = centerY + dy;
+          
+          if (tx >= 0 && tx < size && ty >= 0 && ty < size) {
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            // Only affect tiles within the hill's influence radius
+            if (dist <= radius * 1.1) {
+              // Calculate elevation based on distance from center
+              // Uses a smooth bell curve shape
+              const normalizedDist = dist / radius;
+              // Smooth falloff using cosine-based curve
+              const elevationFactor = normalizedDist <= 1 
+                ? Math.pow(Math.cos(normalizedDist * Math.PI / 2), 1.5)
+                : 0;
+              
+              // Add some noise for natural variation
+              const noiseVal = perlinNoise(tx, ty, seed + 3000, 2) * 0.3 + 0.85;
+              const elevation = peakHeight * elevationFactor * noiseVal;
+              
+              // Only update if new elevation is higher (hills can overlap)
+              if (elevation > grid[ty][tx].elevation) {
+                grid[ty][tx].elevation = elevation;
+              }
+            }
+          }
+        }
+      }
+      
+      break; // Successfully placed hill
+    }
+  }
+  
+  return hills;
+}
+
 // Generate adjacent cities (sometimes, not always)
 function generateAdjacentCities(): AdjacentCity[] {
   const cities: AdjacentCity[] = [];
@@ -399,8 +516,8 @@ function generateAdjacentCities(): AdjacentCity[] {
   return cities;
 }
 
-// Generate terrain - grass with scattered trees, lakes, and oceans
-function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody[] } {
+// Generate terrain - grass with scattered trees, lakes, oceans, and hills
+function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody[]; hills: Hill[] } {
   const grid: Tile[][] = [];
   const seed = Math.random() * 1000;
 
@@ -408,7 +525,7 @@ function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody
   for (let y = 0; y < size; y++) {
     const row: Tile[] = [];
     for (let x = 0; x < size; x++) {
-      row.push(createTile(x, y, 'grass'));
+      row.push(createTile(x, y, 'grass', 0)); // Start with elevation 0
     }
     grid.push(row);
   }
@@ -422,7 +539,10 @@ function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody
   // Combine all water bodies
   const waterBodies = [...lakeBodies, ...oceanBodies];
   
-  // Fourth pass: add scattered trees (avoiding water)
+  // Fourth pass: generate hills (0-3 per map, avoiding water)
+  const hills = generateHills(grid, size, seed);
+  
+  // Fifth pass: add scattered trees (avoiding water, more trees on hills)
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       if (grid[y][x].building.type === 'water') continue; // Don't place trees on water
@@ -433,14 +553,18 @@ function generateTerrain(size: number): { grid: Tile[][]; waterBodies: WaterBody
       // Also add some trees near water for visual appeal
       const nearWater = isNearWater(grid, x, y, size);
       const isTreeNearWater = nearWater && Math.random() > 0.7;
+      
+      // Hills have more trees (nature preserve feel)
+      const elevation = grid[y][x].elevation;
+      const isTreeOnHill = elevation > 1.5 && Math.random() > 0.6;
 
-      if (isTree || isTreeNearWater) {
+      if (isTree || isTreeNearWater || isTreeOnHill) {
         grid[y][x].building = createBuilding('tree');
       }
     }
   }
 
-  return { grid, waterBodies };
+  return { grid, waterBodies, hills };
 }
 
 // Check if a tile is near water
@@ -537,7 +661,7 @@ export function getWaterAdjacency(
   return { hasWater, shouldFlip };
 }
 
-function createTile(x: number, y: number, buildingType: BuildingType = 'grass'): Tile {
+function createTile(x: number, y: number, buildingType: BuildingType = 'grass', elevation: number = 0): Tile {
   return {
     x,
     y,
@@ -548,6 +672,7 @@ function createTile(x: number, y: number, buildingType: BuildingType = 'grass'):
     crime: 0,
     traffic: 0,
     hasSubway: false,
+    elevation,
   };
 }
 
@@ -635,8 +760,9 @@ function createAchievements(): Achievement[] {
   ];
 }
 
-export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
-  const { grid, waterBodies } = generateTerrain(size);
+export function createInitialGameState(size: number = 66, cityName: string = 'New City'): GameState {
+  // Default size is 66 (10% larger than original 60)
+  const { grid, waterBodies, hills } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
 
   return {
@@ -663,6 +789,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     disastersEnabled: true,
     adjacentCities,
     waterBodies,
+    hills,
   };
 }
 
@@ -1998,8 +2125,9 @@ export function placeBuilding(
       if (!allowedTypesForZoning.includes(tile.building.type)) {
         return state; // Can't zone over existing building or part of multi-tile building
       }
-      // Setting zone
+      // Setting zone - also flatten terrain so buildings can grow
       newGrid[y][x].zone = zone;
+      newGrid[y][x].elevation = 0;
     }
   } else if (buildingType) {
     const size = getBuildingSize(buildingType);
@@ -2024,6 +2152,12 @@ export function placeBuilding(
       if (shouldFlip) {
         newGrid[y][x].building.flipped = true;
       }
+      // Flatten terrain under the building footprint
+      for (let dy = 0; dy < size.height; dy++) {
+        for (let dx = 0; dx < size.width; dx++) {
+          newGrid[y + dy][x + dx].elevation = 0;
+        }
+      }
     } else {
       // Single tile building - check if tile is available
       // Can't place on water, existing buildings, or 'empty' tiles (part of multi-tile buildings)
@@ -2039,6 +2173,8 @@ export function placeBuilding(
       if (shouldFlip) {
         newGrid[y][x].building.flipped = true;
       }
+      // Flatten terrain under the building
+      newGrid[y][x].elevation = 0;
     }
   }
 
