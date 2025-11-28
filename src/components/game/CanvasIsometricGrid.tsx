@@ -30,6 +30,9 @@ import {
   PedestrianDestType,
   Firework,
   WorldRenderState,
+  WeatherCloud,
+  RainParticle,
+  SnowParticle,
 } from '@/components/game/types';
 import {
   CAR_COLORS,
@@ -74,6 +77,26 @@ import {
   SMOG_MAX_PARTICLES_PER_FACTORY,
   SMOG_MAX_PARTICLES_PER_FACTORY_MOBILE,
   DIRECTION_META,
+  WEATHER_CLOUD_COUNT,
+  WEATHER_CLOUD_COUNT_MOBILE,
+  WEATHER_CLOUD_SPEED,
+  WEATHER_CLOUD_MIN_SIZE,
+  WEATHER_CLOUD_MAX_SIZE,
+  WEATHER_CLOUD_OPACITY,
+  WEATHER_RAIN_PARTICLES,
+  WEATHER_RAIN_PARTICLES_MOBILE,
+  WEATHER_RAIN_SPEED,
+  WEATHER_RAIN_LENGTH,
+  WEATHER_RAIN_HEAVY_MULTIPLIER,
+  WEATHER_SNOW_PARTICLES,
+  WEATHER_SNOW_PARTICLES_MOBILE,
+  WEATHER_SNOW_SPEED,
+  WEATHER_SNOW_DRIFT,
+  WEATHER_SNOW_SIZE_MIN,
+  WEATHER_SNOW_SIZE_MAX,
+  WEATHER_SNOW_HEAVY_MULTIPLIER,
+  WEATHER_LIGHTNING_FLASH_INTENSITY,
+  WEATHER_FOG_OPACITY,
 } from '@/components/game/constants';
 import {
   isRoadTile,
@@ -133,7 +156,7 @@ export interface CanvasIsometricGridProps {
 // Canvas-based Isometric Grid - HIGH PERFORMANCE
 export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMobile = false, navigationTarget, onNavigationComplete, onViewportChange }: CanvasIsometricGridProps) {
   const { state, placeAtTile, connectToCity, currentSpritePack } = useGame();
-  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour } = state;
+  const { grid, gridSize, selectedTool, speed, adjacentCities, waterBodies, hour, weather } = state;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const carsCanvasRef = useRef<HTMLCanvasElement>(null);
   const lightingCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -203,6 +226,13 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   // Factory smog system refs
   const factorySmogRef = useRef<FactorySmog[]>([]);
   const smogLastGridVersionRef = useRef(-1); // Track when to rebuild factory list
+
+  // Weather visual system refs
+  const weatherCloudsRef = useRef<WeatherCloud[]>([]);
+  const weatherRainRef = useRef<RainParticle[]>([]);
+  const weatherSnowRef = useRef<SnowParticle[]>([]);
+  const weatherCloudIdRef = useRef(0);
+  const weatherInitializedRef = useRef(false);
 
   // Performance: Cache expensive grid calculations
   const cachedRoadTileCountRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
@@ -2768,6 +2798,270 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.restore();
   }, []);
 
+  // ============================================================================
+  // WEATHER VISUAL SYSTEM
+  // ============================================================================
+
+  // Initialize weather particles based on current weather state
+  const initializeWeatherParticles = useCallback(() => {
+    const canvas = carsCanvasRef.current;
+    if (!canvas) return;
+    
+    const viewWidth = canvas.width / (window.devicePixelRatio || 1);
+    const viewHeight = canvas.height / (window.devicePixelRatio || 1);
+    
+    // Initialize clouds
+    const cloudCount = isMobile ? WEATHER_CLOUD_COUNT_MOBILE : WEATHER_CLOUD_COUNT;
+    weatherCloudsRef.current = [];
+    for (let i = 0; i < cloudCount; i++) {
+      weatherCloudsRef.current.push({
+        id: weatherCloudIdRef.current++,
+        x: Math.random() * viewWidth * 2 - viewWidth * 0.5,
+        y: Math.random() * viewHeight * 0.6,
+        size: WEATHER_CLOUD_MIN_SIZE + Math.random() * (WEATHER_CLOUD_MAX_SIZE - WEATHER_CLOUD_MIN_SIZE),
+        opacity: 0.2 + Math.random() * 0.3,
+        speed: WEATHER_CLOUD_SPEED * (0.5 + Math.random() * 0.5),
+        shape: Math.random(),
+      });
+    }
+    
+    // Initialize rain
+    const rainCount = isMobile ? WEATHER_RAIN_PARTICLES_MOBILE : WEATHER_RAIN_PARTICLES;
+    weatherRainRef.current = [];
+    for (let i = 0; i < rainCount; i++) {
+      weatherRainRef.current.push({
+        x: Math.random() * viewWidth * 1.5 - viewWidth * 0.25,
+        y: Math.random() * viewHeight * 1.5 - viewHeight * 0.25,
+        speed: WEATHER_RAIN_SPEED * (0.8 + Math.random() * 0.4),
+        length: WEATHER_RAIN_LENGTH * (0.5 + Math.random() * 0.5),
+        opacity: 0.3 + Math.random() * 0.4,
+      });
+    }
+    
+    // Initialize snow
+    const snowCount = isMobile ? WEATHER_SNOW_PARTICLES_MOBILE : WEATHER_SNOW_PARTICLES;
+    weatherSnowRef.current = [];
+    for (let i = 0; i < snowCount; i++) {
+      weatherSnowRef.current.push({
+        x: Math.random() * viewWidth * 1.5 - viewWidth * 0.25,
+        y: Math.random() * viewHeight * 1.5 - viewHeight * 0.25,
+        size: WEATHER_SNOW_SIZE_MIN + Math.random() * (WEATHER_SNOW_SIZE_MAX - WEATHER_SNOW_SIZE_MIN),
+        speed: WEATHER_SNOW_SPEED * (0.6 + Math.random() * 0.8),
+        drift: (Math.random() - 0.5) * WEATHER_SNOW_DRIFT,
+        wobble: Math.random() * Math.PI * 2,
+        opacity: 0.5 + Math.random() * 0.5,
+      });
+    }
+    
+    weatherInitializedRef.current = true;
+  }, [isMobile]);
+
+  // Update weather particles
+  const updateWeatherParticles = useCallback((delta: number) => {
+    if (!weather || speed === 0) return;
+    
+    const canvas = carsCanvasRef.current;
+    if (!canvas) return;
+    
+    const viewWidth = canvas.width / (window.devicePixelRatio || 1);
+    const viewHeight = canvas.height / (window.devicePixelRatio || 1);
+    
+    // Initialize if needed
+    if (!weatherInitializedRef.current) {
+      initializeWeatherParticles();
+    }
+    
+    const speedMultiplier = [0, 1, 2, 4][speed] || 1;
+    const windDirX = Math.cos(weather.windDirection);
+    const windDirY = Math.sin(weather.windDirection) * 0.3; // Less vertical wind influence
+    
+    // Update clouds
+    for (const cloud of weatherCloudsRef.current) {
+      cloud.x += (cloud.speed + weather.windSpeed * 0.5) * windDirX * delta * speedMultiplier;
+      cloud.y += (weather.windSpeed * 0.1) * windDirY * delta * speedMultiplier;
+      
+      // Wrap around screen
+      if (cloud.x > viewWidth * 1.5) cloud.x = -cloud.size;
+      if (cloud.x < -cloud.size * 2) cloud.x = viewWidth * 1.5;
+      if (cloud.y > viewHeight * 0.7) cloud.y = -cloud.size * 0.5;
+      if (cloud.y < -cloud.size) cloud.y = viewHeight * 0.7;
+    }
+    
+    // Update rain if raining
+    const isRaining = ['rain', 'heavy_rain', 'thunderstorm'].includes(weather.current);
+    if (isRaining) {
+      for (const rain of weatherRainRef.current) {
+        rain.y += rain.speed * delta * speedMultiplier;
+        rain.x += weather.windSpeed * windDirX * 0.5 * delta * speedMultiplier;
+        
+        // Reset particle when it goes off screen
+        if (rain.y > viewHeight * 1.2) {
+          rain.y = -rain.length * 2;
+          rain.x = Math.random() * viewWidth * 1.5 - viewWidth * 0.25;
+        }
+        if (rain.x > viewWidth * 1.3 || rain.x < -viewWidth * 0.3) {
+          rain.x = Math.random() * viewWidth * 1.5 - viewWidth * 0.25;
+        }
+      }
+    }
+    
+    // Update snow if snowing
+    const isSnowing = ['snow', 'heavy_snow', 'blizzard'].includes(weather.current);
+    if (isSnowing) {
+      for (const snow of weatherSnowRef.current) {
+        snow.wobble += delta * 2;
+        snow.y += snow.speed * delta * speedMultiplier;
+        snow.x += (snow.drift + Math.sin(snow.wobble) * 15 + weather.windSpeed * windDirX * 0.8) * delta * speedMultiplier;
+        
+        // Reset particle when it goes off screen
+        if (snow.y > viewHeight * 1.2) {
+          snow.y = -snow.size * 3;
+          snow.x = Math.random() * viewWidth * 1.5 - viewWidth * 0.25;
+        }
+        if (snow.x > viewWidth * 1.3 || snow.x < -viewWidth * 0.3) {
+          snow.x = Math.random() * viewWidth * 1.5 - viewWidth * 0.25;
+          snow.y = Math.random() * viewHeight * 0.5;
+        }
+      }
+    }
+  }, [weather, speed, initializeWeatherParticles]);
+
+  // Draw weather effects (clouds, rain, snow)
+  const drawWeather = useCallback((ctx: CanvasRenderingContext2D) => {
+    if (!weather) return;
+    
+    const canvas = ctx.canvas;
+    const dpr = window.devicePixelRatio || 1;
+    const viewWidth = canvas.width / dpr;
+    const viewHeight = canvas.height / dpr;
+    
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    
+    // Determine which effects to show based on weather
+    const isCloudy = ['cloudy', 'rain', 'heavy_rain', 'thunderstorm', 'fog'].includes(weather.current);
+    const isRaining = ['rain', 'heavy_rain', 'thunderstorm'].includes(weather.current);
+    const isSnowing = ['snow', 'heavy_snow', 'blizzard'].includes(weather.current);
+    const isFoggy = weather.current === 'fog';
+    const isHeatWave = weather.current === 'heat_wave';
+    
+    // Draw clouds (like contrails/smog aesthetic)
+    if (isCloudy || isSnowing) {
+      const cloudOpacity = weather.current === 'thunderstorm' ? 0.6 :
+                          weather.current === 'heavy_rain' ? 0.5 :
+                          weather.current === 'blizzard' ? 0.7 :
+                          weather.current === 'heavy_snow' ? 0.5 :
+                          WEATHER_CLOUD_OPACITY;
+      
+      for (const cloud of weatherCloudsRef.current) {
+        const alpha = cloud.opacity * cloudOpacity * weather.intensity;
+        if (alpha < 0.05) continue;
+        
+        // Draw cloud as soft, layered ellipses (similar to smog/contrails)
+        ctx.fillStyle = `rgba(220, 225, 230, ${alpha})`;
+        
+        // Main body
+        ctx.beginPath();
+        ctx.ellipse(cloud.x, cloud.y, cloud.size * 0.5, cloud.size * 0.25, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add bumpy top using cloud.shape for variation
+        const bumpCount = 3 + Math.floor(cloud.shape * 3);
+        for (let i = 0; i < bumpCount; i++) {
+          const bumpX = cloud.x + (i - bumpCount / 2) * (cloud.size * 0.3);
+          const bumpY = cloud.y - cloud.size * 0.15 - Math.sin(cloud.shape * Math.PI + i * 0.5) * cloud.size * 0.1;
+          const bumpSize = cloud.size * (0.15 + cloud.shape * 0.1 * Math.sin(i * 1.5));
+          
+          ctx.fillStyle = `rgba(230, 235, 240, ${alpha * 0.8})`;
+          ctx.beginPath();
+          ctx.arc(bumpX, bumpY, bumpSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        // Add subtle darker bottom for depth
+        ctx.fillStyle = `rgba(180, 190, 200, ${alpha * 0.3})`;
+        ctx.beginPath();
+        ctx.ellipse(cloud.x, cloud.y + cloud.size * 0.1, cloud.size * 0.4, cloud.size * 0.15, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Draw rain
+    if (isRaining) {
+      const rainIntensity = weather.current === 'thunderstorm' ? 1.2 :
+                           weather.current === 'heavy_rain' ? 1.0 : 0.6;
+      const rainColor = weather.current === 'thunderstorm' ? 'rgba(150, 180, 220, ' : 'rgba(180, 200, 230, ';
+      
+      ctx.lineCap = 'round';
+      
+      for (const rain of weatherRainRef.current) {
+        // Skip some particles for lighter rain
+        if (weather.current === 'rain' && Math.random() > 0.6) continue;
+        
+        const alpha = rain.opacity * rainIntensity * weather.intensity;
+        ctx.strokeStyle = rainColor + alpha + ')';
+        ctx.lineWidth = 1.5;
+        
+        // Calculate rain angle from wind
+        const windAngle = weather.windDirection * 0.3;
+        const endX = rain.x + Math.sin(windAngle) * rain.length;
+        const endY = rain.y + Math.cos(windAngle) * rain.length * 0.8;
+        
+        ctx.beginPath();
+        ctx.moveTo(rain.x, rain.y);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+      }
+    }
+    
+    // Draw snow
+    if (isSnowing) {
+      const snowIntensity = weather.current === 'blizzard' ? 1.3 :
+                           weather.current === 'heavy_snow' ? 1.0 : 0.7;
+      
+      for (const snow of weatherSnowRef.current) {
+        // Skip some particles for lighter snow
+        if (weather.current === 'snow' && Math.random() > 0.7) continue;
+        
+        const alpha = snow.opacity * snowIntensity * weather.intensity;
+        
+        // Draw snowflake as soft glowing circle
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(snow.x, snow.y, snow.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add subtle glow
+        ctx.fillStyle = `rgba(220, 230, 255, ${alpha * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(snow.x, snow.y, snow.size * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Draw fog overlay
+    if (isFoggy) {
+      const fogAlpha = WEATHER_FOG_OPACITY * weather.intensity;
+      ctx.fillStyle = `rgba(200, 210, 220, ${fogAlpha})`;
+      ctx.fillRect(0, 0, viewWidth, viewHeight);
+    }
+    
+    // Draw heat wave shimmer (subtle wavy overlay)
+    if (isHeatWave) {
+      ctx.fillStyle = `rgba(255, 200, 100, ${0.08 * weather.intensity})`;
+      ctx.fillRect(0, 0, viewWidth, viewHeight);
+    }
+    
+    // Draw lightning flash
+    if (weather.lightningFlash > 0) {
+      const flashAlpha = weather.lightningFlash * WEATHER_LIGHTNING_FLASH_INTENSITY;
+      ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+      ctx.fillRect(0, 0, viewWidth, viewHeight);
+    }
+    
+    ctx.restore();
+  }, [weather]);
+
   // Draw emergency vehicles (fire trucks and police cars)
   const drawEmergencyVehicles = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -3777,6 +4071,99 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       ctx.setLineDash([]);
       ctx.lineCap = 'butt';
+      
+      // ============================================
+      // WEATHER EFFECTS ON ROADS
+      // ============================================
+      
+      // Snow accumulation on sidewalks and roads
+      if (weather && weather.snowAccumulation > 0.1) {
+        const snowLevel = weather.snowAccumulation;
+        
+        // Draw snow on sidewalks (edges without adjacent roads)
+        const snowColor = `rgba(255, 255, 255, ${snowLevel * 0.7})`;
+        const snowShadowColor = `rgba(200, 210, 230, ${snowLevel * 0.4})`;
+        
+        // Snow piles along edges without road connections
+        if (!north) {
+          // North edge snow pile
+          ctx.fillStyle = snowColor;
+          ctx.beginPath();
+          ctx.moveTo(leftCorner.x + swWidth, leftCorner.y);
+          ctx.lineTo(topCorner.x - swWidth * 0.5, topCorner.y + swWidth * 0.5);
+          ctx.lineTo(topCorner.x - swWidth, topCorner.y + swWidth);
+          ctx.lineTo(leftCorner.x + swWidth * 2, leftCorner.y + swWidth * 0.5);
+          ctx.closePath();
+          ctx.fill();
+          // Shadow
+          ctx.fillStyle = snowShadowColor;
+          ctx.beginPath();
+          ctx.moveTo(leftCorner.x + swWidth * 2, leftCorner.y + swWidth * 0.5);
+          ctx.lineTo(topCorner.x - swWidth, topCorner.y + swWidth);
+          ctx.lineTo(topCorner.x, topCorner.y + swWidth * 1.5);
+          ctx.lineTo(leftCorner.x + swWidth * 2.5, leftCorner.y + swWidth);
+          ctx.closePath();
+          ctx.fill();
+        }
+        
+        if (!south) {
+          // South edge snow pile
+          ctx.fillStyle = snowColor;
+          ctx.beginPath();
+          ctx.moveTo(rightCorner.x - swWidth, rightCorner.y);
+          ctx.lineTo(bottomCorner.x + swWidth * 0.5, bottomCorner.y - swWidth * 0.5);
+          ctx.lineTo(bottomCorner.x + swWidth, bottomCorner.y - swWidth);
+          ctx.lineTo(rightCorner.x - swWidth * 2, rightCorner.y - swWidth * 0.5);
+          ctx.closePath();
+          ctx.fill();
+        }
+        
+        // Light snow dusting on road surface
+        if (snowLevel > 0.3) {
+          ctx.fillStyle = `rgba(255, 255, 255, ${(snowLevel - 0.3) * 0.2})`;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - centerSize * 0.8);
+          ctx.lineTo(cx + centerSize * 0.8, cy);
+          ctx.lineTo(cx, cy + centerSize * 0.8);
+          ctx.lineTo(cx - centerSize * 0.8, cy);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      
+      // Wet road sheen from rain
+      if (weather && weather.rainWetness > 0.2) {
+        const wetness = weather.rainWetness;
+        
+        // Glossy wet road surface (reflective highlight)
+        ctx.fillStyle = `rgba(100, 130, 180, ${wetness * 0.2})`;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - centerSize);
+        ctx.lineTo(cx + centerSize, cy);
+        ctx.lineTo(cx, cy + centerSize);
+        ctx.lineTo(cx - centerSize, cy);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Subtle highlight for wet look
+        ctx.fillStyle = `rgba(180, 200, 230, ${wetness * 0.15})`;
+        ctx.beginPath();
+        ctx.ellipse(cx - centerSize * 0.2, cy - centerSize * 0.2, centerSize * 0.4, centerSize * 0.2, -Math.PI/4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw wet streaks on connected road segments
+        ctx.fillStyle = `rgba(100, 130, 180, ${wetness * 0.15})`;
+        if (north) {
+          ctx.beginPath();
+          ctx.ellipse(cx + northDx * roadW * 2, cy + northDy * roadW * 2, roadW * 0.3, roadW * 1.5, Math.atan2(northDy, northDx), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (south) {
+          ctx.beginPath();
+          ctx.ellipse(cx + southDx * roadW * 2, cy + southDy * roadW * 2, roadW * 0.3, roadW * 1.5, Math.atan2(southDy, southDx), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
     
     // Draw isometric tile base
@@ -4759,12 +5146,14 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         updateBoats(delta); // Update boats (marina/pier required)
         updateFireworks(delta, hour); // Update fireworks (nighttime only)
         updateSmog(delta); // Update factory smog particles
+        updateWeatherParticles(delta); // Update weather particles
         navLightFlashTimerRef.current += delta * 3; // Update nav light flash timer
       }
       drawCars(ctx);
       drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
       drawBoats(ctx); // Draw boats on water
       drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
+      drawWeather(ctx); // Draw weather effects (clouds, rain, snow)
       drawEmergencyVehicles(ctx); // Draw emergency vehicles!
       drawIncidentIndicators(ctx, delta); // Draw fire/crime incident indicators!
       drawHelicopters(ctx); // Draw helicopters (below planes, above ground)
@@ -4774,7 +5163,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, hour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, updateWeatherParticles, drawWeather, hour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {

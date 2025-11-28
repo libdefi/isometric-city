@@ -294,3 +294,47 @@ export type WorldRenderState = {
 
 // Overlay modes for visualization
 export type OverlayMode = 'none' | 'power' | 'water' | 'fire' | 'police' | 'health' | 'education' | 'subway';
+
+// ============================================================================
+// WEATHER VISUAL TYPES
+// ============================================================================
+
+// Cloud particle for weather rendering (similar to smog but larger, more transparent)
+export type WeatherCloud = {
+  id: number;
+  x: number;
+  y: number;
+  size: number;
+  opacity: number;
+  speed: number;
+  shape: number; // 0-1 for different cloud blob shapes
+};
+
+// Rain particle
+export type RainParticle = {
+  x: number;
+  y: number;
+  speed: number;
+  length: number;
+  opacity: number;
+};
+
+// Snow particle  
+export type SnowParticle = {
+  x: number;
+  y: number;
+  size: number;
+  speed: number;
+  drift: number; // horizontal movement
+  wobble: number; // phase for wobble animation
+  opacity: number;
+};
+
+// Weather visual state
+export type WeatherVisualState = {
+  clouds: WeatherCloud[];
+  rainParticles: RainParticle[];
+  snowParticles: SnowParticle[];
+  lightningFlash: number; // 0-1 intensity
+  lastUpdate: number; // timestamp
+};

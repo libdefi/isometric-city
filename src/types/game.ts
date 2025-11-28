@@ -296,6 +296,119 @@ export interface AdjacentCity {
   connected: boolean;
 }
 
+// ============================================================================
+// WEATHER AND SEASONS
+// ============================================================================
+
+export type Season = 'spring' | 'summer' | 'fall' | 'winter';
+
+export type WeatherType = 
+  | 'clear'
+  | 'cloudy'
+  | 'rain'
+  | 'heavy_rain'
+  | 'thunderstorm'
+  | 'snow'
+  | 'heavy_snow'
+  | 'blizzard'
+  | 'heat_wave'
+  | 'fog';
+
+export interface WeatherState {
+  current: WeatherType;
+  season: Season;
+  temperature: number; // in Celsius
+  intensity: number; // 0-1, affects visual intensity
+  windSpeed: number; // affects cloud/particle movement
+  windDirection: number; // in radians
+  duration: number; // ticks remaining for current weather
+  snowAccumulation: number; // 0-1, affects snow visuals on ground
+  rainWetness: number; // 0-1, affects road wetness visual
+  lightningTimer: number; // countdown to next lightning strike
+  lightningFlash: number; // 0-1, current flash intensity
+}
+
+// Season configuration - which months belong to which season
+export const MONTH_TO_SEASON: Record<number, Season> = {
+  1: 'winter',  // January
+  2: 'winter',  // February
+  3: 'spring',  // March
+  4: 'spring',  // April
+  5: 'spring',  // May
+  6: 'summer',  // June
+  7: 'summer',  // July
+  8: 'summer',  // August
+  9: 'fall',    // September
+  10: 'fall',   // October
+  11: 'fall',   // November
+  12: 'winter', // December
+};
+
+// Season-specific day length (hours of daylight)
+export const SEASON_DAY_LENGTH: Record<Season, { sunrise: number; sunset: number }> = {
+  spring: { sunrise: 6, sunset: 19 },   // 13 hours daylight
+  summer: { sunrise: 5, sunset: 21 },   // 16 hours daylight
+  fall: { sunrise: 7, sunset: 18 },     // 11 hours daylight
+  winter: { sunrise: 8, sunset: 17 },   // 9 hours daylight
+};
+
+// Weather probabilities by season (weights, not percentages)
+export const SEASON_WEATHER_WEIGHTS: Record<Season, Partial<Record<WeatherType, number>>> = {
+  spring: {
+    clear: 30,
+    cloudy: 25,
+    rain: 30,
+    heavy_rain: 10,
+    thunderstorm: 5,
+    fog: 5,
+  },
+  summer: {
+    clear: 45,
+    cloudy: 15,
+    rain: 15,
+    heavy_rain: 5,
+    thunderstorm: 10,
+    heat_wave: 10,
+  },
+  fall: {
+    clear: 25,
+    cloudy: 35,
+    rain: 25,
+    heavy_rain: 5,
+    fog: 10,
+  },
+  winter: {
+    clear: 20,
+    cloudy: 30,
+    snow: 30,
+    heavy_snow: 10,
+    blizzard: 5,
+    fog: 5,
+  },
+};
+
+// Weather economic effects (multipliers for income)
+export const WEATHER_ECONOMIC_EFFECTS: Record<WeatherType, { incomeMultiplier: number; happinessEffect: number }> = {
+  clear: { incomeMultiplier: 1.0, happinessEffect: 5 },
+  cloudy: { incomeMultiplier: 1.0, happinessEffect: 0 },
+  rain: { incomeMultiplier: 0.95, happinessEffect: -3 },
+  heavy_rain: { incomeMultiplier: 0.90, happinessEffect: -5 },
+  thunderstorm: { incomeMultiplier: 0.85, happinessEffect: -8 },
+  snow: { incomeMultiplier: 0.92, happinessEffect: 2 }, // People like some snow
+  heavy_snow: { incomeMultiplier: 0.85, happinessEffect: -3 },
+  blizzard: { incomeMultiplier: 0.70, happinessEffect: -10 },
+  heat_wave: { incomeMultiplier: 0.88, happinessEffect: -7 },
+  fog: { incomeMultiplier: 0.95, happinessEffect: -2 },
+};
+
+// Temperature ranges by season (Celsius)
+export const SEASON_TEMPERATURE: Record<Season, { min: number; max: number; avg: number }> = {
+  spring: { min: 8, max: 22, avg: 15 },
+  summer: { min: 18, max: 35, avg: 26 },
+  fall: { min: 5, max: 18, avg: 12 },
+  winter: { min: -10, max: 8, avg: -2 },
+};
+
 export interface WaterBody {
   id: string;
   name: string;
@@ -328,6 +441,7 @@ export interface GameState {
   disastersEnabled: boolean;
   adjacentCities: AdjacentCity[];
   waterBodies: WaterBody[];
+  weather: WeatherState; // Weather and season system
 }
 
 // Building evolution paths based on zone and level

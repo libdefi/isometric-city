@@ -92,3 +92,46 @@ export const OPPOSITE_DIRECTION: Record<CarDirection, CarDirection> = {
   south: 'north',
   west: 'east',
 };
+
+// ============================================================================
+// WEATHER VISUAL CONSTANTS
+// ============================================================================
+
+// Cloud/weather particle system
+export const WEATHER_CLOUD_COUNT = 15; // Number of cloud particles
+export const WEATHER_CLOUD_COUNT_MOBILE = 8; // Reduced for mobile
+export const WEATHER_CLOUD_SPEED = 20; // Base pixels per second
+export const WEATHER_CLOUD_MIN_SIZE = 60; // Minimum cloud size
+export const WEATHER_CLOUD_MAX_SIZE = 180; // Maximum cloud size
+export const WEATHER_CLOUD_OPACITY = 0.4; // Base opacity for clouds
+
+// Rain particle system  
+export const WEATHER_RAIN_PARTICLES = 300; // Number of rain particles
+export const WEATHER_RAIN_PARTICLES_MOBILE = 100; // Reduced for mobile
+export const WEATHER_RAIN_SPEED = 800; // Pixels per second
+export const WEATHER_RAIN_LENGTH = 15; // Length of rain streak
+export const WEATHER_RAIN_HEAVY_MULTIPLIER = 2; // Particle multiplier for heavy rain
+
+// Snow particle system
+export const WEATHER_SNOW_PARTICLES = 200; // Number of snow particles
+export const WEATHER_SNOW_PARTICLES_MOBILE = 80; // Reduced for mobile
+export const WEATHER_SNOW_SPEED = 60; // Base fall speed (pixels per second)
+export const WEATHER_SNOW_DRIFT = 30; // Horizontal drift speed
+export const WEATHER_SNOW_SIZE_MIN = 2; // Minimum snowflake size
+export const WEATHER_SNOW_SIZE_MAX = 5; // Maximum snowflake size
+export const WEATHER_SNOW_HEAVY_MULTIPLIER = 2.5; // Particle multiplier for heavy snow
+
+// Lightning
+export const WEATHER_LIGHTNING_FLASH_DURATION = 0.15; // seconds
+export const WEATHER_LIGHTNING_FLASH_INTENSITY = 0.9; // max screen white overlay
+
+// Road/sidewalk weather effects
+export const WEATHER_SNOW_PILE_HEIGHT = 4; // pixels of snow pile on sidewalks
+export const WEATHER_RAIN_SHEEN_OPACITY = 0.3; // opacity of wet road effect
+
+// Heat wave shimmer
+export const WEATHER_HEAT_SHIMMER_INTENSITY = 0.03; // distortion amount
+
+// Fog
+export const WEATHER_FOG_OPACITY = 0.5; // max fog opacity
+export const WEATHER_FOG_COLOR = 'rgba(200, 210, 220, 0.5)'; // foggy grey-blue

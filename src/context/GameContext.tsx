@@ -159,6 +159,27 @@ function loadGameState(): GameState | null {
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9; // Start at current tax rate
         }
+        // Ensure weather exists for weather system
+        if (!parsed.weather) {
+          const MONTH_TO_SEASON_MAP: Record<number, 'spring' | 'summer' | 'fall' | 'winter'> = {
+            1: 'winter', 2: 'winter', 3: 'spring', 4: 'spring', 5: 'spring', 6: 'summer',
+            7: 'summer', 8: 'summer', 9: 'fall', 10: 'fall', 11: 'fall', 12: 'winter'
+          };
+          const season = MONTH_TO_SEASON_MAP[parsed.month ?? 1];
+          parsed.weather = {
+            current: 'clear',
+            season,
+            temperature: 15,
+            intensity: 0.5,
+            windSpeed: 10,
+            windDirection: 0,
+            duration: 60,
+            snowAccumulation: 0,
+            rainWetness: 0,
+            lightningTimer: 0,
+            lightningFlash: 0,
+          };
+        }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {
           for (let y = 0; y < parsed.grid.length; y++) {
@@ -563,6 +584,27 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         // Ensure effectiveTaxRate exists for lagging tax effect
         if (parsed.effectiveTaxRate === undefined) {
           parsed.effectiveTaxRate = parsed.taxRate ?? 9;
+        }
+        // Ensure weather exists for weather system
+        if (!parsed.weather) {
+          const MONTH_TO_SEASON_MAP: Record<number, 'spring' | 'summer' | 'fall' | 'winter'> = {
+            1: 'winter', 2: 'winter', 3: 'spring', 4: 'spring', 5: 'spring', 6: 'summer',
+            7: 'summer', 8: 'summer', 9: 'fall', 10: 'fall', 11: 'fall', 12: 'winter'
+          };
+          const season = MONTH_TO_SEASON_MAP[parsed.month ?? 1];
+          parsed.weather = {
+            current: 'clear',
+            season,
+            temperature: 15,
+            intensity: 0.5,
+            windSpeed: 10,
+            windDirection: 0,
+            duration: 60,
+            snowAccumulation: 0,
+            rainWetness: 0,
+            lightningTimer: 0,
+            lightningFlash: 0,
+          };
         }
         // Migrate constructionProgress for existing buildings (they're already built)
         if (parsed.grid) {

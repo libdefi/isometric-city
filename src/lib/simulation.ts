@@ -14,10 +14,18 @@ import {
   Notification,
   AdjacentCity,
   WaterBody,
+  WeatherState,
+  WeatherType,
+  Season,
   BUILDING_STATS,
   RESIDENTIAL_BUILDINGS,
   COMMERCIAL_BUILDINGS,
   INDUSTRIAL_BUILDINGS,
+  MONTH_TO_SEASON,
+  SEASON_WEATHER_WEIGHTS,
+  SEASON_TEMPERATURE,
+  SEASON_DAY_LENGTH,
+  WEATHER_ECONOMIC_EFFECTS,
 } from '@/types/game';
 import { generateCityName, generateWaterName } from './names';
 
@@ -608,6 +616,148 @@ function createInitialBudget(): Budget {
   };
 }
 
+// ============================================================================
+// WEATHER SYSTEM
+// ============================================================================
+
+// Generate a new weather condition based on season
+function generateWeather(season: Season): { weather: WeatherType; duration: number } {
+  const weights = SEASON_WEATHER_WEIGHTS[season];
+  const entries = Object.entries(weights) as [WeatherType, number][];
+  const totalWeight = entries.reduce((sum, [, weight]) => sum + weight, 0);
+  
+  let random = Math.random() * totalWeight;
+  let selectedWeather: WeatherType = 'clear';
+  
+  for (const [weather, weight] of entries) {
+    random -= weight;
+    if (random <= 0) {
+      selectedWeather = weather;
+      break;
+    }
+  }
+  
+  // Duration: 30-150 ticks (about 1-5 game days)
+  // Severe weather tends to be shorter
+  let baseDuration = 60 + Math.random() * 90;
+  if (selectedWeather === 'thunderstorm' || selectedWeather === 'blizzard') {
+    baseDuration = 30 + Math.random() * 40;
+  } else if (selectedWeather === 'heat_wave') {
+    baseDuration = 90 + Math.random() * 120;
+  }
+  
+  return { weather: selectedWeather, duration: Math.floor(baseDuration) };
+}
+
+// Get temperature for current conditions
+function getTemperature(season: Season, weather: WeatherType): number {
+  const tempRange = SEASON_TEMPERATURE[season];
+  let temp = tempRange.avg + (Math.random() - 0.5) * (tempRange.max - tempRange.min) * 0.5;
+  
+  // Weather adjustments
+  if (weather === 'heat_wave') {
+    temp = tempRange.max + Math.random() * 5;
+  } else if (weather === 'blizzard' || weather === 'heavy_snow') {
+    temp = tempRange.min - Math.random() * 5;
+  } else if (weather === 'snow') {
+    temp = Math.min(temp, 2);
+  } else if (weather === 'rain' || weather === 'heavy_rain' || weather === 'thunderstorm') {
+    temp -= 2 + Math.random() * 3;
+  }
+  
+  return Math.round(temp);
+}
+
+// Create initial weather state
+function createInitialWeather(month: number): WeatherState {
+  const season = MONTH_TO_SEASON[month];
+  const { weather, duration } = generateWeather(season);
+  const temperature = getTemperature(season, weather);
+  
+  return {
+    current: weather,
+    season,
+    temperature,
+    intensity: 0.5 + Math.random() * 0.5,
+    windSpeed: 5 + Math.random() * 15,
+    windDirection: Math.random() * Math.PI * 2,
+    duration,
+    snowAccumulation: 0,
+    rainWetness: 0,
+    lightningTimer: weather === 'thunderstorm' ? 30 + Math.random() * 60 : 0,
+    lightningFlash: 0,
+  };
+}
+
+// Update weather state each tick
+function updateWeather(weather: WeatherState, month: number): WeatherState {
+  const newWeather = { ...weather };
+  const currentSeason = MONTH_TO_SEASON[month];
+  
+  // Update season if month changed
+  if (currentSeason !== newWeather.season) {
+    newWeather.season = currentSeason;
+  }
+  
+  // Decrement duration and potentially change weather
+  newWeather.duration -= 1;
+  if (newWeather.duration <= 0) {
+    const { weather: nextWeather, duration } = generateWeather(currentSeason);
+    newWeather.current = nextWeather;
+    newWeather.duration = duration;
+    newWeather.intensity = 0.5 + Math.random() * 0.5;
+    newWeather.temperature = getTemperature(currentSeason, nextWeather);
+    
+    // Slightly change wind
+    newWeather.windSpeed = Math.max(2, Math.min(30, newWeather.windSpeed + (Math.random() - 0.5) * 5));
+    newWeather.windDirection += (Math.random() - 0.5) * 0.5;
+  }
+  
+  // Update snow accumulation
+  const isSnowing = ['snow', 'heavy_snow', 'blizzard'].includes(newWeather.current);
+  if (isSnowing) {
+    const accumulationRate = newWeather.current === 'blizzard' ? 0.015 : 
+                            newWeather.current === 'heavy_snow' ? 0.008 : 0.004;
+    newWeather.snowAccumulation = Math.min(1, newWeather.snowAccumulation + accumulationRate * newWeather.intensity);
+  } else if (newWeather.temperature > 5) {
+    // Snow melts when warm
+    const meltRate = (newWeather.temperature - 5) * 0.002;
+    newWeather.snowAccumulation = Math.max(0, newWeather.snowAccumulation - meltRate);
+  } else if (newWeather.snowAccumulation > 0 && newWeather.temperature > 0) {
+    // Slow melting above freezing
+    newWeather.snowAccumulation = Math.max(0, newWeather.snowAccumulation - 0.001);
+  }
+  
+  // Update rain wetness
+  const isRaining = ['rain', 'heavy_rain', 'thunderstorm'].includes(newWeather.current);
+  if (isRaining) {
+    const wetnessRate = newWeather.current === 'thunderstorm' ? 0.1 : 
+                       newWeather.current === 'heavy_rain' ? 0.06 : 0.03;
+    newWeather.rainWetness = Math.min(1, newWeather.rainWetness + wetnessRate);
+  } else {
+    // Roads dry out
+    const dryRate = newWeather.current === 'heat_wave' ? 0.05 : 
+                   newWeather.current === 'clear' ? 0.02 : 0.01;
+    newWeather.rainWetness = Math.max(0, newWeather.rainWetness - dryRate);
+  }
+  
+  // Update lightning for thunderstorms
+  if (newWeather.current === 'thunderstorm') {
+    newWeather.lightningTimer -= 1;
+    if (newWeather.lightningTimer <= 0) {
+      newWeather.lightningFlash = 1;
+      newWeather.lightningTimer = 20 + Math.random() * 80; // Random interval
+    } else {
+      newWeather.lightningFlash = Math.max(0, newWeather.lightningFlash - 0.15);
+    }
+  } else {
+    newWeather.lightningFlash = 0;
+    newWeather.lightningTimer = 0;
+  }
+  
+  return newWeather;
+}
+
 function createInitialStats(): Stats {
   return {
     population: 0,
@@ -646,13 +796,14 @@ function createServiceCoverage(size: number): ServiceCoverage {
 export function createInitialGameState(size: number = 60, cityName: string = 'New City'): GameState {
   const { grid, waterBodies } = generateTerrain(size);
   const adjacentCities = generateAdjacentCities();
+  const startMonth = 1; // January
 
   return {
     grid,
     gridSize: size,
     cityName,
     year: 2024,
-    month: 1,
+    month: startMonth,
     day: 1,
     hour: 12, // Start at noon
     tick: 0,
@@ -670,6 +821,7 @@ export function createInitialGameState(size: number = 60, cityName: string = 'Ne
     disastersEnabled: true,
     adjacentCities,
     waterBodies,
+    weather: createInitialWeather(startMonth),
   };
 }
 
@@ -1675,26 +1827,55 @@ export function simulateTick(state: GameState): GameState {
   const newStats = calculateStats(newGrid, size, newBudget, state.taxRate, newEffectiveTaxRate, services);
   newStats.money = state.stats.money;
 
+  // Update weather each tick
+  const newWeather = updateWeather(state.weather, state.month);
+  
+  // Apply weather economic effects to income
+  const weatherEffect = WEATHER_ECONOMIC_EFFECTS[newWeather.current];
+  
   // Update money on month change
   let newYear = state.year;
   let newMonth = state.month;
   let newDay = state.day;
   let newTick = state.tick + 1;
   
-  // Calculate visual hour for day/night cycle (much slower than game time)
-  // One full day/night cycle = 15 game days (450 ticks)
-  // This makes the cycle atmospheric rather than jarring
-  const totalTicks = ((state.year - 2024) * 12 * 30 * 30) + ((state.month - 1) * 30 * 30) + ((state.day - 1) * 30) + newTick;
-  const cycleLength = 450; // ticks per visual day (15 game days)
-  const newHour = Math.floor((totalTicks % cycleLength) / cycleLength * 24);
+  // DATE PASSAGE: 6 ticks per day (5x faster than original 30 ticks)
+  // This makes game dates pass more quickly while maintaining the same visual day/night cycle
+  const TICKS_PER_DAY = 6;
+  
+  // Calculate visual hour for day/night cycle based on season
+  // One full day/night cycle = 90 ticks (15 game days at 6 ticks/day)
+  // Season affects sunrise/sunset times
+  const totalTicks = ((state.year - 2024) * 12 * 30 * TICKS_PER_DAY) + ((state.month - 1) * 30 * TICKS_PER_DAY) + ((state.day - 1) * TICKS_PER_DAY) + newTick;
+  const cycleLength = 90; // ticks per visual day (15 game days)
+  const cycleFraction = (totalTicks % cycleLength) / cycleLength; // 0-1 through the cycle
+  
+  // Get season-specific day length
+  const seasonDayLength = SEASON_DAY_LENGTH[newWeather.season];
+  const dayDuration = seasonDayLength.sunset - seasonDayLength.sunrise; // hours of daylight
+  const nightDuration = 24 - dayDuration;
+  
+  // Map cycle fraction to hour, respecting seasonal sunrise/sunset
+  // First half of cycle is daytime, second half is nighttime
+  let newHour: number;
+  if (cycleFraction < 0.5) {
+    // Daytime portion: map 0-0.5 to sunrise-sunset
+    const dayFraction = cycleFraction * 2;
+    newHour = Math.floor(seasonDayLength.sunrise + dayFraction * dayDuration);
+  } else {
+    // Nighttime portion: map 0.5-1 to sunset-sunrise (wrapping through midnight)
+    const nightFraction = (cycleFraction - 0.5) * 2;
+    newHour = Math.floor((seasonDayLength.sunset + nightFraction * nightDuration) % 24);
+  }
 
-  if (newTick >= 30) {
+  if (newTick >= TICKS_PER_DAY) {
     newTick = 0;
     newDay++;
     // Weekly income/expense (deposit every 7 days at 1/4 monthly rate)
-    // Only deposit when day changes to a multiple of 7
+    // Apply weather multiplier to income portion
     if (newDay % 7 === 0) {
-      newStats.money += Math.floor((newStats.income - newStats.expenses) / 4);
+      const weatherAdjustedIncome = Math.floor(newStats.income * weatherEffect.incomeMultiplier);
+      newStats.money += Math.floor((weatherAdjustedIncome - newStats.expenses) / 4);
     }
   }
 
@@ -1707,6 +1888,9 @@ export function simulateTick(state: GameState): GameState {
     newMonth = 1;
     newYear++;
   }
+
+  // Apply weather happiness effect
+  newStats.happiness = Math.min(100, Math.max(0, newStats.happiness + weatherEffect.happinessEffect * 0.1));
 
   // Generate advisor messages
   const advisorMessages = generateAdvisorMessages(newStats, services, newGrid);
@@ -1750,6 +1934,7 @@ export function simulateTick(state: GameState): GameState {
     advisorMessages,
     notifications: newNotifications,
     history,
+    weather: newWeather,
   };
 }
 

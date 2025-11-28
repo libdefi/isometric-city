@@ -17,6 +17,107 @@ import {
   EnvironmentIcon,
 } from '@/components/ui/Icons';
 
+import { WeatherType, Season } from '@/types/game';
+
+// ============================================================================
+// WEATHER ICON
+// ============================================================================
+
+interface WeatherIconProps {
+  weather: WeatherType;
+  className?: string;
+}
+
+export const WeatherIcon = ({ weather, className = "w-4 h-4" }: WeatherIconProps) => {
+  switch (weather) {
+    case 'clear':
+      return (
+        <svg className={`${className} text-yellow-400`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" />
+        </svg>
+      );
+    case 'cloudy':
+      return (
+        <svg className={`${className} text-gray-400`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4.5 9.75a6.75 6.75 0 0113.276-1.604 5.25 5.25 0 01.724 10.354H5.25a4.5 4.5 0 01-.75-8.75z" />
+        </svg>
+      );
+    case 'rain':
+    case 'heavy_rain':
+      return (
+        <svg className={`${className} text-blue-400`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4.5 9.75a6.75 6.75 0 0113.276-1.604 5.25 5.25 0 01.724 10.354H5.25a4.5 4.5 0 01-.75-8.75z" />
+          <path d="M8 19l-1 3M12 19l-1 3M16 19l-1 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    case 'thunderstorm':
+      return (
+        <svg className={`${className} text-purple-400`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4.5 9.75a6.75 6.75 0 0113.276-1.604 5.25 5.25 0 01.724 10.354H5.25a4.5 4.5 0 01-.75-8.75z" />
+          <path d="M13 14l-2 4h3l-2 4" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </svg>
+      );
+    case 'snow':
+    case 'heavy_snow':
+    case 'blizzard':
+      return (
+        <svg className={`${className} text-blue-200`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4.5 9.75a6.75 6.75 0 0113.276-1.604 5.25 5.25 0 01.724 10.354H5.25a4.5 4.5 0 01-.75-8.75z" />
+          <circle cx="8" cy="19" r="1" fill="white" />
+          <circle cx="12" cy="20" r="1" fill="white" />
+          <circle cx="16" cy="19" r="1" fill="white" />
+        </svg>
+      );
+    case 'heat_wave':
+      return (
+        <svg className={`${className} text-orange-500`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0z" />
+          <path d="M5 17c1-2 3-3 4-1s2 3 4 1 3-3 4-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    case 'fog':
+      return (
+        <svg className={`${className} text-gray-300`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M3 8h18M3 12h14M3 16h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    default:
+      return (
+        <svg className={`${className} text-gray-400`} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M4.5 9.75a6.75 6.75 0 0113.276-1.604 5.25 5.25 0 01.724 10.354H5.25a4.5 4.5 0 01-.75-8.75z" />
+        </svg>
+      );
+  }
+};
+
+// Season display helpers
+const SEASON_EMOJI: Record<Season, string> = {
+  spring: '🌸',
+  summer: '☀️',
+  fall: '🍂',
+  winter: '❄️',
+};
+
+const SEASON_NAMES: Record<Season, string> = {
+  spring: 'Spring',
+  summer: 'Summer',
+  fall: 'Fall',
+  winter: 'Winter',
+};
+
+const WEATHER_NAMES: Record<WeatherType, string> = {
+  clear: 'Clear',
+  cloudy: 'Cloudy',
+  rain: 'Rain',
+  heavy_rain: 'Heavy Rain',
+  thunderstorm: 'Thunderstorm',
+  snow: 'Snow',
+  heavy_snow: 'Heavy Snow',
+  blizzard: 'Blizzard',
+  heat_wave: 'Heat Wave',
+  fog: 'Fog',
+};
+
 // ============================================================================
 // TIME OF DAY ICON
 // ============================================================================
@@ -154,7 +255,7 @@ export const StatsPanel = React.memo(function StatsPanel() {
 
 export const TopBar = React.memo(function TopBar() {
   const { state, setSpeed, setTaxRate, isSaving } = useGame();
-  const { stats, year, month, day, hour, speed, taxRate, cityName } = state;
+  const { stats, year, month, day, hour, speed, taxRate, cityName, weather } = state;
   
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const formattedDate = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}-${year}`;
@@ -180,6 +281,39 @@ export const TopBar = React.memo(function TopBar() {
             </Tooltip>
             <TimeOfDayIcon hour={hour} />
           </div>
+        </div>
+        
+        {/* Weather Display */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/50 rounded-md">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5 cursor-default">
+                <span className="text-sm">{SEASON_EMOJI[weather.season]}</span>
+                <WeatherIcon weather={weather.current} className="w-4 h-4" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="space-y-1">
+                <p className="font-medium">{SEASON_NAMES[weather.season]} • {WEATHER_NAMES[weather.current]}</p>
+                <p className="text-xs text-muted-foreground">
+                  {Math.round(weather.temperature)}°C / {Math.round(weather.temperature * 9/5 + 32)}°F
+                </p>
+                {weather.windSpeed > 0.3 && (
+                  <p className="text-xs text-muted-foreground">
+                    Wind: {Math.round(weather.windSpeed * 50)} km/h
+                  </p>
+                )}
+                {weather.snowAccumulation > 0.1 && (
+                  <p className="text-xs text-muted-foreground">
+                    Snow: {Math.round(weather.snowAccumulation * 100)}% coverage
+                  </p>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {Math.round(weather.temperature)}°
+          </span>
         </div>
         
         <div className="flex items-center gap-1 bg-secondary rounded-md p-1">
