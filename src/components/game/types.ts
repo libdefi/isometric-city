@@ -214,6 +214,32 @@ export type Boat = {
   homeScreenY: number;
 };
 
+// Train types for rail transportation
+export type Train = {
+  id: number;
+  tileX: number;
+  tileY: number;
+  direction: CarDirection;
+  progress: number;
+  speed: number;
+  age: number;
+  maxAge: number;
+  color: string;
+  // Path to follow (rail stations)
+  path: { x: number; y: number }[];
+  pathIndex: number;
+  // Station this train originated from
+  originStationX: number;
+  originStationY: number;
+  // Target destination station
+  destStationX: number;
+  destStationY: number;
+  // Whether train is returning to origin
+  returning: boolean;
+  // Number of cars (visual length of train)
+  numCars: number;
+};
+
 // Smog/smoke particle types for industrial factories
 export type SmogParticle = {
   x: number;
@@ -293,4 +319,4 @@ export type WorldRenderState = {
 };
 
 // Overlay modes for visualization
-export type OverlayMode = 'none' | 'power' | 'water' | 'fire' | 'police' | 'health' | 'education' | 'subway';
+export type OverlayMode = 'none' | 'power' | 'water' | 'fire' | 'police' | 'health' | 'education' | 'subway' | 'rail';

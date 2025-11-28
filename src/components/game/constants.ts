@@ -29,6 +29,10 @@ export const BOAT_MIN_ZOOM = 0.3; // Minimum zoom level to show boats
 export const WAKE_MAX_AGE = 2.0; // seconds - how long wake particles last
 export const WAKE_SPAWN_INTERVAL = 0.03; // seconds between wake particles
 
+// Train system constants
+export const TRAIN_COLORS = ['#dc2626', '#1e40af', '#059669', '#7c3aed', '#ea580c']; // Red, blue, green, purple, orange trains
+export const TRAIN_MIN_POPULATION = 2000; // Minimum population required for trains
+
 // Factory smog system constants
 export const SMOG_BUILDINGS: BuildingType[] = ['factory_medium', 'factory_large'];
 export const SMOG_PARTICLE_MAX_AGE = 8.0; // seconds - how long smog particles last

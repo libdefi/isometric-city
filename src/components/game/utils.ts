@@ -13,6 +13,12 @@ export function isRoadTile(gridData: Tile[][], gridSizeValue: number, x: number,
   return gridData[y][x].building.type === 'road';
 }
 
+// Check if a tile is a rail
+export function isRailTile(gridData: Tile[][], gridSizeValue: number, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= gridSizeValue || y >= gridSizeValue) return false;
+  return gridData[y][x].building.type === 'rail';
+}
+
 // Get available direction options from a tile
 export function getDirectionOptions(gridData: Tile[][], gridSizeValue: number, x: number, y: number): CarDirection[] {
   const options: CarDirection[] = [];
@@ -20,6 +26,16 @@ export function getDirectionOptions(gridData: Tile[][], gridSizeValue: number, x
   if (isRoadTile(gridData, gridSizeValue, x, y - 1)) options.push('east');
   if (isRoadTile(gridData, gridSizeValue, x + 1, y)) options.push('south');
   if (isRoadTile(gridData, gridSizeValue, x, y + 1)) options.push('west');
+  return options;
+}
+
+// Get available direction options from a rail tile
+export function getRailDirectionOptions(gridData: Tile[][], gridSizeValue: number, x: number, y: number): CarDirection[] {
+  const options: CarDirection[] = [];
+  if (isRailTile(gridData, gridSizeValue, x - 1, y)) options.push('north');
+  if (isRailTile(gridData, gridSizeValue, x, y - 1)) options.push('east');
+  if (isRailTile(gridData, gridSizeValue, x + 1, y)) options.push('south');
+  if (isRailTile(gridData, gridSizeValue, x, y + 1)) options.push('west');
   return options;
 }
 
@@ -32,6 +48,22 @@ export function pickNextDirection(
   y: number
 ): CarDirection | null {
   const options = getDirectionOptions(gridData, gridSizeValue, x, y);
+  if (options.length === 0) return null;
+  const incoming = getOppositeDirection(previousDirection);
+  const filtered = options.filter(dir => dir !== incoming);
+  const pool = filtered.length > 0 ? filtered : options;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Pick next direction for train movement on rails
+export function pickNextRailDirection(
+  previousDirection: CarDirection,
+  gridData: Tile[][],
+  gridSizeValue: number,
+  x: number,
+  y: number
+): CarDirection | null {
+  const options = getRailDirectionOptions(gridData, gridSizeValue, x, y);
   if (options.length === 0) return null;
   const incoming = getOppositeDirection(previousDirection);
   const filtered = options.filter(dir => dir !== incoming);
@@ -147,6 +179,127 @@ export function findPathOnRoads(
       if (nx < 0 || ny < 0 || nx >= gridSizeValue || ny >= gridSizeValue) continue;
       if (visited.has(key)) continue;
       if (!isRoadTile(gridData, gridSizeValue, nx, ny)) continue;
+      
+      visited.add(key);
+      queue.push({
+        x: nx,
+        y: ny,
+        path: [...current.path, { x: nx, y: ny }],
+      });
+    }
+  }
+  
+  return null; // No path found
+}
+
+// Find the nearest rail tile adjacent to a rail station
+export function findNearestRailToStation(
+  gridData: Tile[][],
+  gridSizeValue: number,
+  stationX: number,
+  stationY: number
+): { x: number; y: number } | null {
+  // Check adjacent tiles first (distance 1) - including diagonals
+  const adjacentOffsets = [
+    { dx: -1, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: -1 },
+    { dx: 0, dy: 1 },
+    { dx: -1, dy: -1 },
+    { dx: -1, dy: 1 },
+    { dx: 1, dy: -1 },
+    { dx: 1, dy: 1 },
+  ];
+  
+  for (const { dx, dy } of adjacentOffsets) {
+    const nx = stationX + dx;
+    const ny = stationY + dy;
+    if (isRailTile(gridData, gridSizeValue, nx, ny)) {
+      return { x: nx, y: ny };
+    }
+  }
+  
+  // BFS to find nearest rail within reasonable distance
+  const queue: { x: number; y: number; dist: number }[] = [{ x: stationX, y: stationY, dist: 0 }];
+  const visited = new Set<string>();
+  visited.add(`${stationX},${stationY}`);
+  
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current.dist > 20) break;
+    
+    for (const { dx, dy } of adjacentOffsets) {
+      const nx = current.x + dx;
+      const ny = current.y + dy;
+      const key = `${nx},${ny}`;
+      
+      if (nx < 0 || ny < 0 || nx >= gridSizeValue || ny >= gridSizeValue) continue;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      
+      if (isRailTile(gridData, gridSizeValue, nx, ny)) {
+        return { x: nx, y: ny };
+      }
+      
+      queue.push({ x: nx, y: ny, dist: current.dist + 1 });
+    }
+  }
+  
+  return null;
+}
+
+// BFS pathfinding on rail network
+export function findPathOnRails(
+  gridData: Tile[][],
+  gridSizeValue: number,
+  startX: number,
+  startY: number,
+  targetX: number,
+  targetY: number
+): { x: number; y: number }[] | null {
+  // Find the nearest rail tile to the target station
+  const targetRail = findNearestRailToStation(gridData, gridSizeValue, targetX, targetY);
+  if (!targetRail) return null;
+  
+  // Find the nearest rail tile to the start station
+  const startRail = findNearestRailToStation(gridData, gridSizeValue, startX, startY);
+  if (!startRail) return null;
+  
+  // If start and target rails are the same, return a simple path
+  if (startRail.x === targetRail.x && startRail.y === targetRail.y) {
+    return [{ x: startRail.x, y: startRail.y }];
+  }
+  
+  // BFS from start rail to target rail
+  const queue: { x: number; y: number; path: { x: number; y: number }[] }[] = [
+    { x: startRail.x, y: startRail.y, path: [{ x: startRail.x, y: startRail.y }] }
+  ];
+  const visited = new Set<string>();
+  visited.add(`${startRail.x},${startRail.y}`);
+  
+  const directions = [
+    { dx: -1, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: -1 },
+    { dx: 0, dy: 1 },
+  ];
+  
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    
+    // Check if we reached the target rail
+    if (current.x === targetRail.x && current.y === targetRail.y) {
+      return current.path;
+    }
+    
+    for (const { dx, dy } of directions) {
+      const nx = current.x + dx;
+      const ny = current.y + dy;
+      const key = `${nx},${ny}`;
+      
+      if (nx < 0 || ny < 0 || nx >= gridSizeValue || ny >= gridSizeValue) continue;
+      if (visited.has(key)) continue;
+      if (!isRailTile(gridData, gridSizeValue, nx, ny)) continue;
       
       visited.add(key);
       queue.push({

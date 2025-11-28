@@ -252,6 +252,140 @@ export const RoadTile: React.FC<BuildingProps & { adjacency?: RoadAdjacency }> =
   );
 };
 
+// Rail Tile - railway tracks with ties
+export const RailTile: React.FC<BuildingProps & { adjacency?: RoadAdjacency }> = ({ 
+  size = TILE_WIDTH,
+  adjacency = { north: false, east: false, south: false, west: false }
+}) => {
+  const w = size;
+  const h = getTileHeight(w);
+  
+  const { north, east, south, west } = adjacency;
+  
+  // Center of tile
+  const center = { x: w * 0.5, y: h * 0.5 };
+  
+  // Rail colors - darker metallic gray
+  const railColor = '#6b7280';
+  const tieColor = '#78350f';
+  
+  // Rail width (narrower than roads)
+  const railW = w * 0.08;
+  const railH = h * 0.08;
+  
+  // Calculate rail segments
+  const railSegments: { path: string; color: string }[] = [];
+  
+  // Helper to create rail lines (two parallel lines)
+  const createRailPair = (x1: number, y1: number, x2: number, y2: number) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const perpX = -dy / len * railW;
+    const perpY = dx / len * railH;
+    
+    return [
+      // Left rail
+      `M ${x1 + perpX} ${y1 + perpY} L ${x2 + perpX} ${y2 + perpY}`,
+      // Right rail
+      `M ${x1 - perpX} ${y1 - perpY} L ${x2 - perpX} ${y2 - perpY}`,
+    ];
+  };
+  
+  if (north) {
+    const rails = createRailPair(center.x, center.y, w * 0.25, h * 0.25);
+    rails.forEach(rail => railSegments.push({ path: rail, color: railColor }));
+  }
+  
+  if (east) {
+    const rails = createRailPair(center.x, center.y, w * 0.75, h * 0.25);
+    rails.forEach(rail => railSegments.push({ path: rail, color: railColor }));
+  }
+  
+  if (south) {
+    const rails = createRailPair(center.x, center.y, w * 0.75, h * 0.75);
+    rails.forEach(rail => railSegments.push({ path: rail, color: railColor }));
+  }
+  
+  if (west) {
+    const rails = createRailPair(center.x, center.y, w * 0.25, h * 0.75);
+    rails.forEach(rail => railSegments.push({ path: rail, color: railColor }));
+  }
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      {/* Base grass under rail */}
+      <polygon
+        points={getTilePoints(w)}
+        fill="#3d5a35"
+        stroke="#2d4a26"
+        strokeWidth={0.5}
+      />
+      
+      {/* Gravel bed under rails */}
+      <ellipse 
+        cx={center.x} 
+        cy={center.y} 
+        rx={w * 0.25} 
+        ry={h * 0.25} 
+        fill="#9ca3af" 
+        opacity={0.6}
+      />
+      
+      {/* Railroad ties */}
+      {north && (
+        <>
+          <rect x={w * 0.25 - 8} y={h * 0.35} width={16} height={3} fill={tieColor} opacity={0.8} />
+          <rect x={w * 0.35 - 8} y={h * 0.42} width={16} height={3} fill={tieColor} opacity={0.8} />
+        </>
+      )}
+      {east && (
+        <>
+          <rect x={w * 0.58} y={h * 0.35} width={16} height={3} fill={tieColor} opacity={0.8} />
+          <rect x={w * 0.65} y={h * 0.42} width={16} height={3} fill={tieColor} opacity={0.8} />
+        </>
+      )}
+      {south && (
+        <>
+          <rect x={w * 0.58} y={h * 0.58} width={16} height={3} fill={tieColor} opacity={0.8} />
+          <rect x={w * 0.65} y={h * 0.65} width={16} height={3} fill={tieColor} opacity={0.8} />
+        </>
+      )}
+      {west && (
+        <>
+          <rect x={w * 0.25 - 8} y={h * 0.58} width={16} height={3} fill={tieColor} opacity={0.8} />
+          <rect x={w * 0.35 - 8} y={h * 0.65} width={16} height={3} fill={tieColor} opacity={0.8} />
+        </>
+      )}
+      
+      {/* Rails */}
+      {railSegments.map((segment, i) => (
+        <path 
+          key={i} 
+          d={segment.path} 
+          stroke={segment.color} 
+          strokeWidth={2.5} 
+          fill="none"
+          strokeLinecap="round"
+        />
+      ))}
+      
+      {/* Rail highlights for metallic effect */}
+      {railSegments.map((segment, i) => (
+        <path 
+          key={`highlight-${i}`} 
+          d={segment.path} 
+          stroke="#9ca3af" 
+          strokeWidth={1} 
+          fill="none"
+          strokeLinecap="round"
+          opacity={0.5}
+        />
+      ))}
+    </svg>
+  );
+};
+
 // Tree - small vertical element on tile
 export const TreeTile: React.FC<BuildingProps> = ({ size = TILE_WIDTH }) => {
   const w = size;
@@ -924,6 +1058,8 @@ export const BuildingRenderer: React.FC<{
         return <TreeTile size={size} />;
       case 'road':
         return <RoadTile size={size} adjacency={roadAdjacency} />;
+      case 'rail':
+        return <RailTile size={size} adjacency={roadAdjacency} />;
       case 'shop_small':
         return <SmallShop size={size} powered={powered} />;
       case 'shop_medium':

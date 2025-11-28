@@ -467,3 +467,23 @@ export function countRoadTiles(
   }
   return count;
 }
+
+/**
+ * Find all rail stations in the city
+ */
+export function findRailStations(
+  grid: Tile[][],
+  gridSize: number
+): { x: number; y: number }[] {
+  if (!grid || gridSize <= 0) return [];
+
+  const stations: { x: number; y: number }[] = [];
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      if (grid[y][x].building.type === 'rail_station') {
+        stations.push({ x, y });
+      }
+    }
+  }
+  return stations;
+}
