@@ -17,6 +17,7 @@ import {
   TILE_HEIGHT,
   KEY_PAN_SPEED,
   Car,
+  Train,
   CarDirection,
   Airplane,
   Helicopter,
@@ -173,6 +174,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const carsRef = useRef<Car[]>([]);
   const carIdRef = useRef(0);
   const carSpawnTimerRef = useRef(0);
+  const trainsRef = useRef<Train[]>([]);
+  const trainIdRef = useRef(0);
+  const trainSpawnTimerRef = useRef(0);
   const emergencyVehiclesRef = useRef<EmergencyVehicle[]>([]);
   const emergencyVehicleIdRef = useRef(0);
   const emergencyDispatchTimerRef = useRef(0);
@@ -269,6 +273,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     carsRef,
     carIdRef,
     carSpawnTimerRef,
+    trainsRef,
+    trainIdRef,
+    trainSpawnTimerRef,
     emergencyVehiclesRef,
     emergencyVehicleIdRef,
     emergencyDispatchTimerRef,
@@ -303,8 +310,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     updateEmergencyDispatch,
     updateEmergencyVehicles,
     updateCars,
+    updateTrains,
     updatePedestrians,
     drawCars,
+    drawTrains,
     drawPedestrians,
     drawEmergencyVehicles,
     drawIncidentIndicators,
@@ -1687,6 +1696,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       return grid[gridY][gridX].building.type === 'road';
     }
     
+    // Helper function to check if a tile has rail
+    function hasRail(gridX: number, gridY: number): boolean {
+      if (gridX < 0 || gridX >= gridSize || gridY < 0 || gridY >= gridSize) return false;
+      return grid[gridY][gridX].building.type === 'rail';
+    }
+    
     // Helper function to check if a tile has a marina dock or pier (no beaches next to these)
     // Also checks 'empty' tiles that are part of multi-tile marina buildings
     function hasMarinaPier(gridX: number, gridY: number): boolean {
@@ -2329,6 +2344,227 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     }
     
+    // Draw rail tracks with 2 parallel tracks
+    function drawRail(ctx: CanvasRenderingContext2D, x: number, y: number, gridX: number, gridY: number, currentZoom: number) {
+      const w = TILE_WIDTH;
+      const h = TILE_HEIGHT;
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      
+      // Check adjacency (in isometric coordinates)
+      const north = hasRail(gridX - 1, gridY);  // top-left edge
+      const east = hasRail(gridX, gridY - 1);   // top-right edge
+      const south = hasRail(gridX + 1, gridY);  // bottom-right edge
+      const west = hasRail(gridX, gridY + 1);   // bottom-left edge
+      
+      // Rail track width (narrower than roads)
+      const trackWidth = w * 0.08;
+      const trackSpacing = w * 0.12; // Distance between the two tracks
+      const railBedWidth = w * 0.35; // Width of the rail bed (gravel/ties area)
+      
+      // Edge stop distance
+      const edgeStop = 0.98;
+      
+      // Calculate edge midpoints
+      const northEdgeX = x + w * 0.25;
+      const northEdgeY = y + h * 0.25;
+      const eastEdgeX = x + w * 0.75;
+      const eastEdgeY = y + h * 0.25;
+      const southEdgeX = x + w * 0.75;
+      const southEdgeY = y + h * 0.75;
+      const westEdgeX = x + w * 0.25;
+      const westEdgeY = y + h * 0.75;
+      
+      // Direction vectors
+      const northDx = (northEdgeX - cx) / Math.hypot(northEdgeX - cx, northEdgeY - cy);
+      const northDy = (northEdgeY - cy) / Math.hypot(northEdgeX - cx, northEdgeY - cy);
+      const eastDx = (eastEdgeX - cx) / Math.hypot(eastEdgeX - cx, eastEdgeY - cy);
+      const eastDy = (eastEdgeY - cy) / Math.hypot(eastEdgeX - cx, eastEdgeY - cy);
+      const southDx = (southEdgeX - cx) / Math.hypot(southEdgeX - cx, southEdgeY - cy);
+      const southDy = (southEdgeY - cy) / Math.hypot(southEdgeX - cx, southEdgeY - cy);
+      const westDx = (westEdgeX - cx) / Math.hypot(westEdgeX - cx, westEdgeY - cy);
+      const westDy = (westEdgeY - cy) / Math.hypot(westEdgeX - cx, westEdgeY - cy);
+      
+      const getPerp = (dx: number, dy: number) => ({ nx: -dy, ny: dx });
+      
+      // Draw rail bed (gravel base)
+      ctx.fillStyle = '#3a3a3a'; // Dark grey for rail bed
+      
+      // Draw rail bed segments
+      if (north) {
+        const stopX = cx + (northEdgeX - cx) * edgeStop;
+        const stopY = cy + (northEdgeY - cy) * edgeStop;
+        const perp = getPerp(northDx, northDy);
+        const halfWidth = railBedWidth * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + perp.nx * halfWidth, cy + perp.ny * halfWidth);
+        ctx.lineTo(stopX + perp.nx * halfWidth, stopY + perp.ny * halfWidth);
+        ctx.lineTo(stopX - perp.nx * halfWidth, stopY - perp.ny * halfWidth);
+        ctx.lineTo(cx - perp.nx * halfWidth, cy - perp.ny * halfWidth);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      if (east) {
+        const stopX = cx + (eastEdgeX - cx) * edgeStop;
+        const stopY = cy + (eastEdgeY - cy) * edgeStop;
+        const perp = getPerp(eastDx, eastDy);
+        const halfWidth = railBedWidth * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + perp.nx * halfWidth, cy + perp.ny * halfWidth);
+        ctx.lineTo(stopX + perp.nx * halfWidth, stopY + perp.ny * halfWidth);
+        ctx.lineTo(stopX - perp.nx * halfWidth, stopY - perp.ny * halfWidth);
+        ctx.lineTo(cx - perp.nx * halfWidth, cy - perp.ny * halfWidth);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      if (south) {
+        const stopX = cx + (southEdgeX - cx) * edgeStop;
+        const stopY = cy + (southEdgeY - cy) * edgeStop;
+        const perp = getPerp(southDx, southDy);
+        const halfWidth = railBedWidth * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + perp.nx * halfWidth, cy + perp.ny * halfWidth);
+        ctx.lineTo(stopX + perp.nx * halfWidth, stopY + perp.ny * halfWidth);
+        ctx.lineTo(stopX - perp.nx * halfWidth, stopY - perp.ny * halfWidth);
+        ctx.lineTo(cx - perp.nx * halfWidth, cy - perp.ny * halfWidth);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      if (west) {
+        const stopX = cx + (westEdgeX - cx) * edgeStop;
+        const stopY = cy + (westEdgeY - cy) * edgeStop;
+        const perp = getPerp(westDx, westDy);
+        const halfWidth = railBedWidth * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cx + perp.nx * halfWidth, cy + perp.ny * halfWidth);
+        ctx.lineTo(stopX + perp.nx * halfWidth, stopY + perp.ny * halfWidth);
+        ctx.lineTo(stopX - perp.nx * halfWidth, stopY - perp.ny * halfWidth);
+        ctx.lineTo(cx - perp.nx * halfWidth, cy - perp.ny * halfWidth);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      // Center intersection rail bed
+      const centerSize = railBedWidth * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - centerSize);
+      ctx.lineTo(cx + centerSize, cy);
+      ctx.lineTo(cx, cy + centerSize);
+      ctx.lineTo(cx - centerSize, cy);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw two parallel tracks
+      ctx.strokeStyle = '#1a1a1a'; // Dark color for rails
+      ctx.lineWidth = 2;
+      
+      const drawTrack = (dx: number, dy: number, offset: number) => {
+        const perp = getPerp(dx, dy);
+        const offsetX = perp.nx * offset;
+        const offsetY = perp.ny * offset;
+        
+        if (north) {
+          const stopX = cx + (northEdgeX - cx) * edgeStop;
+          const stopY = cy + (northEdgeY - cy) * edgeStop;
+          ctx.beginPath();
+          ctx.moveTo(cx + offsetX, cy + offsetY);
+          ctx.lineTo(stopX + offsetX, stopY + offsetY);
+          ctx.stroke();
+        }
+        
+        if (east) {
+          const stopX = cx + (eastEdgeX - cx) * edgeStop;
+          const stopY = cy + (eastEdgeY - cy) * edgeStop;
+          ctx.beginPath();
+          ctx.moveTo(cx + offsetX, cy + offsetY);
+          ctx.lineTo(stopX + offsetX, stopY + offsetY);
+          ctx.stroke();
+        }
+        
+        if (south) {
+          const stopX = cx + (southEdgeX - cx) * edgeStop;
+          const stopY = cy + (southEdgeY - cy) * edgeStop;
+          ctx.beginPath();
+          ctx.moveTo(cx + offsetX, cy + offsetY);
+          ctx.lineTo(stopX + offsetX, stopY + offsetY);
+          ctx.stroke();
+        }
+        
+        if (west) {
+          const stopX = cx + (westEdgeX - cx) * edgeStop;
+          const stopY = cy + (westEdgeY - cy) * edgeStop;
+          ctx.beginPath();
+          ctx.moveTo(cx + offsetX, cy + offsetY);
+          ctx.lineTo(stopX + offsetX, stopY + offsetY);
+          ctx.stroke();
+        }
+      };
+      
+      // Draw two tracks (left and right)
+      if (north || south) {
+        // Vertical tracks (north-south)
+        drawTrack(northDx, northDy, -trackSpacing / 2);
+        drawTrack(northDx, northDy, trackSpacing / 2);
+      } else if (east || west) {
+        // Horizontal tracks (east-west)
+        drawTrack(eastDx, eastDy, -trackSpacing / 2);
+        drawTrack(eastDx, eastDy, trackSpacing / 2);
+      } else {
+        // Single tile - draw tracks in default direction (north-south)
+        drawTrack(northDx, northDy, -trackSpacing / 2);
+        drawTrack(northDx, northDy, trackSpacing / 2);
+      }
+      
+      // Draw cross ties (sleepers) - small perpendicular lines
+      if (currentZoom >= 0.7) {
+        ctx.strokeStyle = '#2a2a2a';
+        ctx.lineWidth = 1;
+        const tieLength = trackSpacing + trackWidth * 2;
+        const tieSpacing = 8;
+        
+        const drawTies = (dx: number, dy: number, startX: number, startY: number, endX: number, endY: number) => {
+          const perp = getPerp(dx, dy);
+          const dist = Math.hypot(endX - startX, endY - startY);
+          const steps = Math.floor(dist / tieSpacing);
+          
+          for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const tieX = startX + (endX - startX) * t;
+            const tieY = startY + (endY - startY) * t;
+            
+            ctx.beginPath();
+            ctx.moveTo(tieX + perp.nx * tieLength / 2, tieY + perp.ny * tieLength / 2);
+            ctx.lineTo(tieX - perp.nx * tieLength / 2, tieY - perp.ny * tieLength / 2);
+            ctx.stroke();
+          }
+        };
+        
+        if (north) {
+          const stopX = cx + (northEdgeX - cx) * edgeStop;
+          const stopY = cy + (northEdgeY - cy) * edgeStop;
+          drawTies(northDx, northDy, cx, cy, stopX, stopY);
+        }
+        if (east) {
+          const stopX = cx + (eastEdgeX - cx) * edgeStop;
+          const stopY = cy + (eastEdgeY - cy) * edgeStop;
+          drawTies(eastDx, eastDy, cx, cy, stopX, stopY);
+        }
+        if (south) {
+          const stopX = cx + (southEdgeX - cx) * edgeStop;
+          const stopY = cy + (southEdgeY - cy) * edgeStop;
+          drawTies(southDx, southDy, cx, cy, stopX, stopY);
+        }
+        if (west) {
+          const stopX = cx + (westEdgeX - cx) * edgeStop;
+          const stopY = cy + (westEdgeY - cy) * edgeStop;
+          drawTies(westDx, westDy, cx, cy, stopX, stopY);
+        }
+      }
+    }
+    
     // Draw isometric tile base
     function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, highlight: boolean, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
       const w = TILE_WIDTH;
@@ -2361,6 +2597,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         leftColor = '#3a3a3a';
         rightColor = '#5a5a5a';
         strokeColor = '#333';
+      } else if (tile.building.type === 'rail') {
+        topColor = '#3a3a3a';
+        leftColor = '#2a2a2a';
+        rightColor = '#4a4a4a';
+        strokeColor = '#222';
       } else if (isPark) {
         topColor = '#4a7c3f';
         leftColor = '#3d6634';
@@ -2471,6 +2712,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       // Handle roads separately with adjacency
       if (buildingType === 'road') {
         drawRoad(ctx, x, y, tile.x, tile.y, zoom);
+        return;
+      }
+      
+      // Handle rails separately with adjacency
+      if (buildingType === 'rail') {
+        drawRail(ctx, x, y, tile.x, tile.y, zoom);
         return;
       }
       
@@ -3191,6 +3438,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         }
         // Roads go to their own queue (drawn above water)
         else if (tile.building.type === 'road') {
+          roadQueue.push({ screenX, screenY, tile, depth });
+        }
+        // Rails go to their own queue (drawn above water)
+        else if (tile.building.type === 'rail') {
           const depth = x + y;
           roadQueue.push({ screenX, screenY, tile, depth });
         }
@@ -3484,6 +3735,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       if (delta > 0) {
         updateCars(delta);
+        updateTrains(delta);
         spawnCrimeIncidents(delta); // Spawn new crime incidents
         updateCrimeIncidents(delta); // Update/decay crime incidents
         updateEmergencyVehicles(delta); // Update emergency vehicles!
@@ -3504,6 +3756,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       } else {
         drawCars(ctx);
+        drawTrains(ctx);
         drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
         drawBoats(ctx); // Draw boats on water
         drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
@@ -3517,7 +3770,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, updateTrains, drawCars, drawTrains, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {
@@ -3602,7 +3855,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     };
     
     // Set for building types that are not lit
-    const nonLitTypes = new Set(['grass', 'empty', 'water', 'road', 'tree', 'park', 'park_large', 'tennis']);
+    const nonLitTypes = new Set(['grass', 'empty', 'water', 'road', 'rail', 'tree', 'park', 'park_large', 'tennis']);
     const residentialTypes = new Set(['house_small', 'house_medium', 'mansion', 'apartment_low', 'apartment_high']);
     const commercialTypes = new Set(['shop_small', 'shop_medium', 'office_low', 'office_high', 'mall']);
     
@@ -3809,8 +4062,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             placedRoadTilesRef.current.clear();
             // Place immediately on first click
             placeAtTile(gridX, gridY);
-            // Track initial tile for roads and subways
-            if (selectedTool === 'road' || selectedTool === 'subway') {
+            // Track initial tile for roads, rails, and subways
+            if (selectedTool === 'road' || selectedTool === 'rail' || selectedTool === 'subway') {
               placedRoadTilesRef.current.add(`${gridX},${gridY}`);
             }
           }
@@ -3927,8 +4180,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         if (isDragging && showsDragGrid && dragStartTile) {
           setDragEndTile({ x: gridX, y: gridY });
         }
-        // For roads and subways, use straight-line snapping
-        else if (isDragging && (selectedTool === 'road' || selectedTool === 'subway') && dragStartTile) {
+        // For roads, rails, and subways, use straight-line snapping
+        else if (isDragging && (selectedTool === 'road' || selectedTool === 'rail' || selectedTool === 'subway') && dragStartTile) {
           const dx = Math.abs(gridX - dragStartTile.x);
           const dy = Math.abs(gridY - dragStartTile.y);
           
@@ -3990,9 +4243,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     }
     
-    // After placing roads, check if any cities should be discovered
-    // This happens after any road placement (drag or click) reaches an edge
-    if (isDragging && selectedTool === 'road') {
+    // After placing roads or rails, check if any cities should be discovered
+    // This happens after any road/rail placement (drag or click) reaches an edge
+    if (isDragging && (selectedTool === 'road' || selectedTool === 'rail')) {
       // Use setTimeout to allow state to update first, then check for discoverable cities
       setTimeout(() => {
         checkAndDiscoverCities((discoveredCity) => {

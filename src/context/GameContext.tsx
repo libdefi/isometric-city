@@ -84,6 +84,7 @@ const toolBuildingMap: Partial<Record<Tool, BuildingType>> = {
   power_plant: 'power_plant',
   water_tower: 'water_tower',
   subway_station: 'subway_station',
+  rail_station: 'rail_station',
   stadium: 'stadium',
   museum: 'museum',
   airport: 'airport',
@@ -506,6 +507,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (tile.hasSubway) return prev;
         
         const nextState = placeSubway(prev, x, y);
+        if (nextState === prev) return prev;
+        
+        return {
+          ...nextState,
+          stats: { ...nextState.stats, money: nextState.stats.money - cost },
+        };
+      }
+
+      // Handle rail tool separately (similar to road but different building type)
+      if (tool === 'rail') {
+        // Can't place rail on water
+        if (tile.building.type === 'water') return prev;
+        // Already has rail
+        if (tile.building.type === 'rail') return prev;
+        
+        const nextState = placeBuilding(prev, x, y, 'rail', null);
         if (nextState === prev) return prev;
         
         return {
