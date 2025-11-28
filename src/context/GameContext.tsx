@@ -16,6 +16,7 @@ import {
   placeBuilding,
   placeSubway,
   simulateTick,
+  DEFAULT_GRID_SIZE,
 } from '@/lib/simulation';
 import {
   SPRITE_PACKS,
@@ -163,6 +164,9 @@ function loadGameState(): GameState | null {
         if (parsed.grid) {
           for (let y = 0; y < parsed.grid.length; y++) {
             for (let x = 0; x < parsed.grid[y].length; x++) {
+              if (parsed.grid[y][x] && parsed.grid[y][x].elevation === undefined) {
+                parsed.grid[y][x].elevation = 0;
+              }
               if (parsed.grid[y][x]?.building && parsed.grid[y][x].building.constructionProgress === undefined) {
                 parsed.grid[y][x].building.constructionProgress = 100; // Existing buildings are complete
               }
@@ -254,7 +258,7 @@ function saveSpritePackId(packId: string): void {
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   // Start with a default state, we'll load from localStorage after mount
-  const [state, setState] = useState<GameState>(() => createInitialGameState(60, 'IsoCity'));
+  const [state, setState] = useState<GameState>(() => createInitialGameState(DEFAULT_GRID_SIZE, 'IsoCity'));
   
   const [hasExistingGame, setHasExistingGame] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

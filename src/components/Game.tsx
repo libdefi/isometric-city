@@ -60,7 +60,40 @@ import { VinnieDialog } from '@/components/VinnieDialog';
 const TILE_WIDTH = 64;
 const HEIGHT_RATIO = 0.60;
 const TILE_HEIGHT = TILE_WIDTH * HEIGHT_RATIO;
+const ELEVATION_PIXEL_STEP = TILE_HEIGHT * 0.3;
+const MAX_HILL_HEIGHT = 8;
+const HILL_GREY_TOP = '#8a8a8a';
+const HILL_GREY_LEFT = '#6d6d6d';
+const HILL_GREY_RIGHT = '#a0a0a0';
 const KEY_PAN_SPEED = 520; // Pixels per second for keyboard panning
+
+const getTileElevationOffset = (tile: Tile | undefined | null) =>
+  ((tile?.elevation ?? 0) * ELEVATION_PIXEL_STEP);
+
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = hex.replace('#', '');
+  const bigint = parseInt(normalized, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return [r, g, b];
+}
+
+function componentToHex(c: number) {
+  const clamped = Math.max(0, Math.min(255, Math.round(c)));
+  const hex = clamped.toString(16);
+  return hex.length === 1 ? `0${hex}` : hex;
+}
+
+function blendHex(colorA: string, colorB: string, t: number) {
+  const [r1, g1, b1] = hexToRgb(colorA);
+  const [r2, g2, b2] = hexToRgb(colorB);
+  const clampT = Math.max(0, Math.min(1, t));
+  const r = r1 + (r2 - r1) * clampT;
+  const g = g1 + (g2 - g1) * clampT;
+  const b = b1 + (b2 - b1) * clampT;
+  return `#${componentToHex(r)}${componentToHex(g)}${componentToHex(b)}`;
+}
 
 type CarDirection = 'north' | 'east' | 'south' | 'west';
 
@@ -5970,10 +6003,21 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
     }
     
     // Draw isometric tile base
-    function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, highlight: boolean, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
+    function drawIsometricTile(
+      ctx: CanvasRenderingContext2D,
+      x: number,
+      y: number,
+      tile: Tile,
+      highlight: boolean,
+      currentZoom: number,
+      skipGreyBase: boolean = false,
+      skipGreenBase: boolean = false
+    ) {
       const w = TILE_WIDTH;
       const h = TILE_HEIGHT;
-      
+      const topY = y;
+      const tileElevation = tile.elevation || 0;
+
       // Determine tile colors (top face and shading)
       let topColor = '#4a7c3f'; // grass
       let leftColor = '#3d6634';
@@ -6002,6 +6046,11 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
       
       // ALL buildings get grey/concrete base tiles (except parks which stay green)
       const hasGreyBase = isBuilding && !isPark;
+
+      const hillsideEligible = tileElevation > 0 &&
+        (tile.building.type === 'grass' || tile.building.type === 'tree') &&
+        tile.zone === 'none';
+      const hillFactor = hillsideEligible ? Math.min(tileElevation / MAX_HILL_HEIGHT, 1) : 0;
       
       if (tile.building.type === 'water') {
         topColor = '#2563eb';
@@ -6059,18 +6108,53 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         }
         strokeColor = '#f59e0b';
       }
+
+      if (hillFactor > 0) {
+        topColor = blendHex(topColor, HILL_GREY_TOP, 0.3 + hillFactor * 0.7);
+        leftColor = blendHex(leftColor, HILL_GREY_LEFT, hillFactor);
+        rightColor = blendHex(rightColor, HILL_GREY_RIGHT, hillFactor);
+      }
       
       // Skip drawing green base for grass/empty tiles adjacent to water (will be drawn later over water)
       const shouldSkipDrawing = skipGreenBase && (tile.building.type === 'grass' || tile.building.type === 'empty');
+
+      if (tileElevation > 0) {
+        const southNeighborElevation = grid[tile.y]?.[tile.x + 1]?.elevation ?? 0;
+        const westNeighborElevation = grid[tile.y + 1]?.[tile.x]?.elevation ?? 0;
+        const southDeltaPx = Math.max(0, tileElevation - southNeighborElevation) * ELEVATION_PIXEL_STEP;
+        const westDeltaPx = Math.max(0, tileElevation - westNeighborElevation) * ELEVATION_PIXEL_STEP;
+
+        if (southDeltaPx > 0) {
+          ctx.fillStyle = hillFactor > 0 ? blendHex(rightColor, HILL_GREY_RIGHT, hillFactor * 0.8 + 0.2) : rightColor;
+          ctx.beginPath();
+          ctx.moveTo(x + w, topY + h / 2);
+          ctx.lineTo(x + w, topY + h / 2 + southDeltaPx);
+          ctx.lineTo(x + w / 2, topY + h + southDeltaPx);
+          ctx.lineTo(x + w / 2, topY + h);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        if (westDeltaPx > 0) {
+          ctx.fillStyle = hillFactor > 0 ? blendHex(leftColor, HILL_GREY_LEFT, hillFactor * 0.8 + 0.2) : leftColor;
+          ctx.beginPath();
+          ctx.moveTo(x, topY + h / 2);
+          ctx.lineTo(x, topY + h / 2 + westDeltaPx);
+          ctx.lineTo(x + w / 2, topY + h + westDeltaPx);
+          ctx.lineTo(x + w / 2, topY + h);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
       
       // Draw the isometric diamond (top face)
       if (!shouldSkipDrawing) {
         ctx.fillStyle = topColor;
         ctx.beginPath();
-        ctx.moveTo(x + w / 2, y);
-        ctx.lineTo(x + w, y + h / 2);
-        ctx.lineTo(x + w / 2, y + h);
-        ctx.lineTo(x, y + h / 2);
+        ctx.moveTo(x + w / 2, topY);
+        ctx.lineTo(x + w, topY + h / 2);
+        ctx.lineTo(x + w / 2, topY + h);
+        ctx.lineTo(x, topY + h / 2);
         ctx.closePath();
         ctx.fill();
         
@@ -6099,10 +6183,10 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         // Draw a semi-transparent fill for better visibility
         ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
         ctx.beginPath();
-        ctx.moveTo(x + w / 2, y);
-        ctx.lineTo(x + w, y + h / 2);
-        ctx.lineTo(x + w / 2, y + h);
-        ctx.lineTo(x, y + h / 2);
+        ctx.moveTo(x + w / 2, topY);
+        ctx.lineTo(x + w, topY + h / 2);
+        ctx.lineTo(x + w / 2, topY + h);
+        ctx.lineTo(x, topY + h / 2);
         ctx.closePath();
         ctx.fill();
         
@@ -6835,31 +6919,43 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
                                       (tile.building.type === 'empty' && isPartOfParkBuilding(x, y));
         
         // Draw base tile for all tiles (including water), but skip gray bases for buildings and green bases for grass/empty adjacent to water or parks
-        drawIsometricTile(ctx, screenX, screenY, tile, !!(isHovered || isSelected || isInDragRect), zoom, true, needsGreenBaseOverWater || needsGreenBaseForPark);
+        const elevationOffset = getTileElevationOffset(tile);
+        const tileTopY = screenY - elevationOffset;
+
+        drawIsometricTile(
+          ctx,
+          screenX,
+          tileTopY,
+          tile,
+          !!(isHovered || isSelected || isInDragRect),
+          zoom,
+          true,
+          needsGreenBaseOverWater || needsGreenBaseForPark
+        );
         
         if (needsGreyBase) {
-          baseTileQueue.push({ screenX, screenY, tile, depth: x + y });
+          baseTileQueue.push({ screenX, screenY: tileTopY, tile, depth: x + y });
         }
         
         if (needsGreenBaseOverWater || needsGreenBaseForPark) {
-          greenBaseTileQueue.push({ screenX, screenY, tile, depth: x + y });
+          greenBaseTileQueue.push({ screenX, screenY: tileTopY, tile, depth: x + y });
         }
         
         // Separate water tiles into their own queue (drawn after base tiles, below other buildings)
         if (tile.building.type === 'water') {
           const size = getBuildingSize(tile.building.type);
           const depth = x + y + size.width + size.height - 2;
-          waterQueue.push({ screenX, screenY, tile, depth });
+          waterQueue.push({ screenX, screenY: tileTopY, tile, depth });
         }
         // Roads go to their own queue (drawn above water)
         else if (tile.building.type === 'road') {
           const depth = x + y;
-          roadQueue.push({ screenX, screenY, tile, depth });
+          roadQueue.push({ screenX, screenY: tileTopY, tile, depth });
         }
         // Check for beach tiles (grass/empty tiles adjacent to water)
         else if ((tile.building.type === 'grass' || tile.building.type === 'empty') &&
                  isAdjacentToWater(x, y)) {
-          beachQueue.push({ screenX, screenY, tile, depth: x + y });
+          beachQueue.push({ screenX, screenY: tileTopY, tile, depth: x + y });
         }
         // Other buildings go to regular building queue
         else {
@@ -6867,7 +6963,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
           if (isBuilding) {
             const size = getBuildingSize(tile.building.type);
             const depth = x + y + size.width + size.height - 2;
-            buildingQueue.push({ screenX, screenY, tile, depth });
+            buildingQueue.push({ screenX, screenY: tileTopY, tile, depth });
           }
         }
         
@@ -6881,7 +6977,7 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
                tile.building.type !== 'water' &&
                tile.building.type !== 'road'));
         if (showOverlay) {
-          overlayQueue.push({ screenX, screenY, tile });
+          overlayQueue.push({ screenX, screenY: tileTopY, tile });
         }
       }
     }
@@ -7042,13 +7138,15 @@ function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile, isMob
         
         // Convert grid coordinates to screen coordinates (context is already translated)
         const { screenX, screenY } = gridToScreen(waterBody.centerX, waterBody.centerY, 0, 0);
+        const labelTile = grid[waterBody.centerY]?.[waterBody.centerX];
+        const labelTopY = screenY - getTileElevationOffset(labelTile);
         
         // Only draw if visible on screen (with some padding for text)
         if (screenX >= viewLeft - 100 && screenX <= viewRight + 100 &&
-            screenY >= viewTop - 50 && screenY <= viewBottom + 50) {
+            labelTopY >= viewTop - 50 && labelTopY <= viewBottom + 50) {
           // Draw text with outline for better visibility, centered on tile
-          ctx.strokeText(waterBody.name, screenX + TILE_WIDTH / 2, screenY + TILE_HEIGHT / 2);
-          ctx.fillText(waterBody.name, screenX + TILE_WIDTH / 2, screenY + TILE_HEIGHT / 2);
+          ctx.strokeText(waterBody.name, screenX + TILE_WIDTH / 2, labelTopY + TILE_HEIGHT / 2);
+          ctx.fillText(waterBody.name, screenX + TILE_WIDTH / 2, labelTopY + TILE_HEIGHT / 2);
         }
       }
       
