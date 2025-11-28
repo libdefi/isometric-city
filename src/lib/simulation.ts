@@ -2455,7 +2455,7 @@ export function generateRandomAdvancedCity(size: number = DEFAULT_GRID_SIZE, cit
   function createAdvancedBuilding(type: BuildingType): Building {
     return {
       type,
-      level: type === 'grass' || type === 'empty' || type === 'water' || type === 'road' ? 0 : Math.floor(Math.random() * 3) + 3,
+      level: type === 'grass' || type === 'empty' || type === 'water' || type === 'road' || type === 'rail' ? 0 : Math.floor(Math.random() * 3) + 3,
       population: 0,
       jobs: 0,
       powered: true,
