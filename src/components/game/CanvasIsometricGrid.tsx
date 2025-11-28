@@ -132,6 +132,21 @@ import {
   ROAD_CONFIG,
   TRAFFIC_LIGHT_TIMING,
 } from '@/components/game/trafficSystem';
+import {
+  getAdjacentRails,
+  analyzeRail,
+  drawRailSegment,
+  RAIL_COLORS,
+} from '@/components/game/railSystem';
+import {
+  isRailTile,
+  getRailDirectionOptions,
+  pickNextTrainDirection,
+  spawnRandomTrain,
+  updateTrains,
+  drawTrains,
+} from '@/components/game/trainSystem';
+import { Train } from '@/components/game/types';
 
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
@@ -185,6 +200,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const pedestriansRef = useRef<Pedestrian[]>([]);
   const pedestrianIdRef = useRef(0);
   const pedestrianSpawnTimerRef = useRef(0);
+  
+  // Train system refs
+  const trainsRef = useRef<Train[]>([]);
+  const trainIdRef = useRef(0);
+  const trainSpawnTimerRef = useRef(0);
   
   // Touch gesture state for mobile
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -1649,6 +1669,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     const buildingQueue: BuildingDraw[] = [];
     const waterQueue: BuildingDraw[] = [];
     const roadQueue: BuildingDraw[] = []; // Roads drawn above water
+    const railQueue: BuildingDraw[] = []; // Rails drawn above water
     const beachQueue: BuildingDraw[] = [];
     const baseTileQueue: BuildingDraw[] = [];
     const greenBaseTileQueue: BuildingDraw[] = [];
@@ -1685,6 +1706,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     function hasRoad(gridX: number, gridY: number): boolean {
       if (gridX < 0 || gridX >= gridSize || gridY < 0 || gridY >= gridSize) return false;
       return grid[gridY][gridX].building.type === 'road';
+    }
+    
+    function hasRail(gridX: number, gridY: number): boolean {
+      if (gridX < 0 || gridX >= gridSize || gridY < 0 || gridY >= gridSize) return false;
+      return grid[gridY][gridX].building.type === 'rail';
     }
     
     // Helper function to check if a tile has a marina dock or pier (no beaches next to these)
@@ -2329,6 +2355,18 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       }
     }
     
+    // Draw rail tracks with adjacency
+    function drawRail(ctx: CanvasRenderingContext2D, x: number, y: number, gridX: number, gridY: number, currentZoom: number) {
+      // Get adjacent rails
+      const adj = getAdjacentRails(grid, gridSize, gridX, gridY);
+      
+      // Analyze rail orientation
+      const railInfo = analyzeRail(grid, gridSize, gridX, gridY);
+      
+      // Draw rail using the rail system
+      drawRailSegment(ctx, x, y, railInfo, currentZoom);
+    }
+    
     // Draw isometric tile base
     function drawIsometricTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: Tile, highlight: boolean, currentZoom: number, skipGreyBase: boolean = false, skipGreenBase: boolean = false) {
       const w = TILE_WIDTH;
@@ -2471,6 +2509,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       // Handle roads separately with adjacency
       if (buildingType === 'road') {
         drawRoad(ctx, x, y, tile.x, tile.y, zoom);
+        return;
+      }
+      
+      // Handle rails separately with adjacency
+      if (buildingType === 'rail') {
+        drawRail(ctx, x, y, tile.x, tile.y, zoom);
         return;
       }
       
@@ -3194,6 +3238,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           const depth = x + y;
           roadQueue.push({ screenX, screenY, tile, depth });
         }
+        // Rails go to their own queue (drawn above water)
+        else if (tile.building.type === 'rail') {
+          const depth = x + y;
+          railQueue.push({ screenX, screenY, tile, depth });
+        }
         // Check for beach tiles (grass/empty tiles adjacent to water) - use pre-computed metadata
         else if ((tile.building.type === 'grass' || tile.building.type === 'empty') &&
                  (tileMetadata?.isAdjacentToWater ?? false)) {
@@ -3290,6 +3339,25 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         ctx.fill();
         
         // Draw road markings and sidewalks
+        drawBuilding(ctx, screenX, screenY, tile);
+      });
+    
+    // Draw rails (above water, needs full redraw including base tile)
+    insertionSortByDepth(railQueue);
+    railQueue.forEach(({ tile, screenX, screenY }) => {
+        // Draw rail base tile first (green/grass diamond)
+        const w = TILE_WIDTH;
+        const h = TILE_HEIGHT;
+        ctx.fillStyle = '#6b8b60';
+        ctx.beginPath();
+        ctx.moveTo(screenX + w / 2, screenY);
+        ctx.lineTo(screenX + w, screenY + h / 2);
+        ctx.lineTo(screenX + w / 2, screenY + h);
+        ctx.lineTo(screenX, screenY + h / 2);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Draw rail tracks
         drawBuilding(ctx, screenX, screenY, tile);
       });
     
@@ -3495,6 +3563,24 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         updateSmog(delta); // Update factory smog particles
         navLightFlashTimerRef.current += delta * 3; // Update nav light flash timer
         trafficLightTimerRef.current += delta; // Update traffic light cycle timer
+        
+        // Update trains
+        const speedMultiplier = speed === 0 ? 0 : speed === 1 ? 1 : speed === 2 ? 2.5 : 4;
+        trainsRef.current = updateTrains(trainsRef.current, grid, gridSize, delta, speedMultiplier);
+        
+        // Spawn new trains
+        const maxTrains = Math.min(40, Math.max(8, Math.floor(gridSize * 0.8)));
+        trainSpawnTimerRef.current -= delta;
+        if (trainsRef.current.length < maxTrains && trainSpawnTimerRef.current <= 0) {
+          const result = spawnRandomTrain(grid, gridSize, trainsRef.current, trainIdRef.current);
+          if (result.train) {
+            trainsRef.current.push(result.train);
+            trainIdRef.current = result.newId;
+            trainSpawnTimerRef.current = 2.0 + Math.random() * 3.0;
+          } else {
+            trainSpawnTimerRef.current = 1.0;
+          }
+        }
       }
       // PERF: Skip drawing animated elements during mobile panning/zooming for better performance
       const skipAnimatedElements = isMobile && (isPanningRef.current || isPinchZoomingRef.current);
@@ -3505,6 +3591,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       } else {
         drawCars(ctx);
         drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
+        drawTrains(ctx, trainsRef.current, grid, gridSize, offset, zoom, canvas.width, canvas.height); // Draw trains on rails
         drawBoats(ctx); // Draw boats on water
         drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
         drawEmergencyVehicles(ctx); // Draw emergency vehicles!
