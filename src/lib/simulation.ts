@@ -1497,17 +1497,20 @@ function updateBudgetCosts(grid: Tile[][], budget: Budget): Budget {
         case 'power_plant': powerCount++; break;
         case 'water_tower': waterCount++; break;
         case 'road': roadCount++; break;
+        case 'rail': roadCount++; break; // Rails count toward transportation
       }
     }
   }
 
-  // Count subway tiles and stations
+  // Count subway tiles, rail stations, and stations
   let subwayTileCount = 0;
   let subwayStationCount = 0;
+  let railStationCount = 0;
   for (const row of grid) {
     for (const tile of row) {
       if (tile.hasSubway) subwayTileCount++;
       if (tile.building.type === 'subway_station') subwayStationCount++;
+      if (tile.building.type === 'rail_station') railStationCount++;
     }
   }
 
@@ -1515,7 +1518,7 @@ function updateBudgetCosts(grid: Tile[][], budget: Budget): Budget {
   newBudget.fire.cost = fireCount * 50;
   newBudget.health.cost = hospitalCount * 100;
   newBudget.education.cost = schoolCount * 30 + universityCount * 100;
-  newBudget.transportation.cost = roadCount * 2 + subwayTileCount * 3 + subwayStationCount * 25;
+  newBudget.transportation.cost = roadCount * 2 + subwayTileCount * 3 + subwayStationCount * 25 + railStationCount * 20;
   newBudget.parks.cost = parkCount * 10;
   newBudget.power.cost = powerCount * 150;
   newBudget.water.cost = waterCount * 75;

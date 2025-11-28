@@ -252,6 +252,251 @@ export const RoadTile: React.FC<BuildingProps & { adjacency?: RoadAdjacency }> =
   );
 };
 
+// Rail tile - adapts to adjacent rails
+export const RailTile: React.FC<BuildingProps & { adjacency?: RoadAdjacency }> = ({ 
+  size = TILE_WIDTH,
+  adjacency = { north: false, east: false, south: false, west: false }
+}) => {
+  const w = size;
+  const h = getTileHeight(w);
+  
+  const { north, east, south, west } = adjacency;
+  
+  // Track spacing (distance between 2 tracks)
+  const trackSpacing = w * 0.125;
+  const trackWidth = 1.5;
+  
+  // Edge midpoints for rail connections
+  const northMid = { x: w * 0.25, y: h * 0.25 };
+  const eastMid = { x: w * 0.75, y: h * 0.25 };
+  const southMid = { x: w * 0.75, y: h * 0.75 };
+  const westMid = { x: w * 0.25, y: h * 0.75 };
+  const center = { x: w * 0.5, y: h * 0.5 };
+  
+  // Rail colors
+  const trackColor = '#4a5568';
+  const sleeperColor = '#8b4513';
+  const ballastColor = '#6b7280';
+  
+  // Helper function to draw a rail line between two points
+  const drawRailLine = (x1: number, y1: number, x2: number, y2: number, offset: number) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const perpX = -dy / len * offset;
+    const perpY = dx / len * offset;
+    
+    return {
+      x1: x1 + perpX,
+      y1: y1 + perpY,
+      x2: x2 + perpX,
+      y2: y2 + perpY,
+    };
+  };
+  
+  // Draw sleepers (railroad ties) between two points
+  const drawSleepers = (x1: number, y1: number, x2: number, y2: number) => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const numSleepers = Math.floor(len / 8);
+    const sleepers = [];
+    
+    for (let i = 0; i <= numSleepers; i++) {
+      const t = i / numSleepers;
+      const sx = x1 + dx * t;
+      const sy = y1 + dy * t;
+      
+      // Perpendicular to track direction
+      const perpX = -dy / len;
+      const perpY = dx / len;
+      
+      const sleeperWidth = w * 0.19;
+      const sleeperHeight = 2;
+      
+      sleepers.push(
+        <rect
+          key={`sleeper-${x1}-${y1}-${i}`}
+          x={sx - sleeperWidth / 2 + perpX * sleeperHeight / 2}
+          y={sy - sleeperHeight / 2 + perpY * sleeperHeight / 2}
+          width={sleeperWidth}
+          height={sleeperHeight}
+          fill={sleeperColor}
+        />
+      );
+    }
+    
+    return sleepers;
+  };
+
+  // Calculate ballast path (gravel bed)
+  const ballastWidth = w * 0.22;
+  const ballastOffset = ballastWidth * 0.707;
+  
+  let ballastPath = '';
+  if (north && south && !east && !west) {
+    // NS ballast
+    ballastPath = `
+      M ${w * 0.0 + ballastOffset} ${h * 0.5 - ballastOffset}
+      L ${w * 0.5 + ballastOffset} ${h * 0.0 + ballastOffset}
+      L ${w * 1.0 - ballastOffset} ${h * 0.5 - ballastOffset}
+      L ${w * 0.5 - ballastOffset} ${h * 1.0 + ballastOffset}
+      Z
+    `;
+  } else if (east && west && !north && !south) {
+    // EW ballast
+    ballastPath = `
+      M ${w * 0.5 - ballastOffset} ${h * 0.0 + ballastOffset}
+      L ${w * 1.0 - ballastOffset} ${h * 0.5 + ballastOffset}
+      L ${w * 0.5 + ballastOffset} ${h * 1.0 - ballastOffset}
+      L ${w * 0.0 + ballastOffset} ${h * 0.5 - ballastOffset}
+      Z
+    `;
+  } else {
+    // Full diamond for curves and crossings
+    ballastPath = getTilePoints(w);
+  }
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      {/* Base grass under rail */}
+      <polygon
+        points={getTilePoints(w)}
+        fill="#3d5a35"
+        stroke="#2d4a26"
+        strokeWidth={0.5}
+      />
+      
+      {/* Ballast (gravel bed) */}
+      {ballastPath && (
+        <path d={ballastPath} fill={ballastColor} />
+      )}
+      
+      {/* Sleepers (railroad ties) */}
+      {north && drawSleepers(center.x, center.y, northMid.x, northMid.y)}
+      {east && drawSleepers(center.x, center.y, eastMid.x, eastMid.y)}
+      {south && drawSleepers(center.x, center.y, southMid.x, southMid.y)}
+      {west && drawSleepers(center.x, center.y, westMid.x, westMid.y)}
+      
+      {/* Rail tracks - 2 tracks per direction */}
+      {north && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, northMid.x, northMid.y, trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, northMid.x, northMid.y, -trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+        </>
+      )}
+      {east && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, eastMid.x, eastMid.y, trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, eastMid.x, eastMid.y, -trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+        </>
+      )}
+      {south && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, southMid.x, southMid.y, trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, southMid.x, southMid.y, -trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+        </>
+      )}
+      {west && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, westMid.x, westMid.y, trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, westMid.x, westMid.y, -trackSpacing / 2)}
+            stroke={trackColor}
+            strokeWidth={trackWidth}
+          />
+        </>
+      )}
+      
+      {/* Track highlights */}
+      {north && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, northMid.x, northMid.y, trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, northMid.x, northMid.y, -trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+        </>
+      )}
+      {east && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, eastMid.x, eastMid.y, trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, eastMid.x, eastMid.y, -trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+        </>
+      )}
+      {south && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, southMid.x, southMid.y, trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, southMid.x, southMid.y, -trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+        </>
+      )}
+      {west && (
+        <>
+          <line 
+            {...drawRailLine(center.x, center.y, westMid.x, westMid.y, trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+          <line 
+            {...drawRailLine(center.x, center.y, westMid.x, westMid.y, -trackSpacing / 2)}
+            stroke="#718096"
+            strokeWidth={0.5}
+          />
+        </>
+      )}
+    </svg>
+  );
+};
+
 // Tree - small vertical element on tile
 export const TreeTile: React.FC<BuildingProps> = ({ size = TILE_WIDTH }) => {
   const w = size;
@@ -924,6 +1169,8 @@ export const BuildingRenderer: React.FC<{
         return <TreeTile size={size} />;
       case 'road':
         return <RoadTile size={size} adjacency={roadAdjacency} />;
+      case 'rail':
+        return <RailTile size={size} adjacency={roadAdjacency} />;
       case 'shop_small':
         return <SmallShop size={size} powered={powered} />;
       case 'shop_medium':
