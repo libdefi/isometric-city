@@ -17,25 +17,18 @@ import {
   TILE_HEIGHT,
   KEY_PAN_SPEED,
   Car,
-  CarDirection,
   Airplane,
   Helicopter,
   EmergencyVehicle,
-  EmergencyVehicleType,
   Boat,
   TourWaypoint,
   FactorySmog,
   OverlayMode,
   Pedestrian,
-  PedestrianDestType,
   Firework,
   WorldRenderState,
 } from '@/components/game/types';
 import {
-  CAR_COLORS,
-  PEDESTRIAN_SKIN_COLORS,
-  PEDESTRIAN_SHIRT_COLORS,
-  PEDESTRIAN_MIN_ZOOM,
   AIRPLANE_MIN_POPULATION,
   AIRPLANE_COLORS,
   CONTRAIL_MAX_AGE,
@@ -73,17 +66,8 @@ import {
   SMOG_PARTICLE_GROWTH,
   SMOG_MAX_PARTICLES_PER_FACTORY,
   SMOG_MAX_PARTICLES_PER_FACTORY_MOBILE,
-  DIRECTION_META,
 } from '@/components/game/constants';
-import {
-  isRoadTile,
-  getDirectionOptions,
-  pickNextDirection,
-  findPathOnRoads,
-  getDirectionToTile,
-  gridToScreen,
-  screenToGrid,
-} from '@/components/game/utils';
+import { gridToScreen, screenToGrid } from '@/components/game/utils';
 import {
   drawGreenBaseTile,
   drawGreyBaseTile,
@@ -97,10 +81,6 @@ import { drawPlaceholderBuilding } from '@/components/game/placeholders';
 import { loadImage, loadSpriteImage, onImageLoaded, getCachedImage } from '@/components/game/imageLoader';
 import { TileInfoPanel } from '@/components/game/panels';
 import {
-  findResidentialBuildings,
-  findPedestrianDestinations,
-  findStations,
-  findFires,
   findAirports,
   findHeliports,
   findMarinasAndPiers,
@@ -117,8 +97,26 @@ import {
   setupCanvasContext,
   clearCanvas,
 } from '@/components/game/renderHelpers';
-import { drawAirplanes as drawAirplanesUtil, drawHelicopters as drawHelicoptersUtil } from '@/components/game/drawAircraft';
-import { drawPedestrians as drawPedestriansUtil } from '@/components/game/drawPedestrians';
+import {
+  CrimeIncident,
+  TrafficSystemContext,
+  spawnCrimeIncidents as spawnCrimeIncidentsSystem,
+  updateCrimeIncidents as updateCrimeIncidentsSystem,
+  updateEmergencyVehicles as updateEmergencyVehiclesSystem,
+  updateCars as updateCarsSystem,
+  updatePedestrians as updatePedestriansSystem,
+  drawCars as drawCarsLayer,
+  drawPedestrians as drawPedestriansLayer,
+  drawEmergencyVehicles as drawEmergencyVehiclesLayer,
+  drawIncidentIndicators as drawIncidentIndicatorsLayer,
+} from '@/components/game/canvas/systems/trafficSystem';
+import {
+  AerialSystemContext,
+  updateAirplanes as updateAirplanesSystem,
+  updateHelicopters as updateHelicoptersSystem,
+  drawAirplanes as drawAirplanesLayer,
+  drawHelicopters as drawHelicoptersLayer,
+} from '@/components/game/canvas/systems/aerialSystem';
 
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
@@ -161,7 +159,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const emergencyDispatchTimerRef = useRef(0);
   const activeFiresRef = useRef<Set<string>>(new Set()); // Track fires that already have a truck dispatched
   const activeCrimesRef = useRef<Set<string>>(new Set()); // Track crimes that already have a car dispatched
-  const activeCrimeIncidentsRef = useRef<Map<string, { x: number; y: number; type: 'robbery' | 'burglary' | 'disturbance' | 'traffic'; timeRemaining: number }>>(new Map()); // Persistent crime incidents
+  const activeCrimeIncidentsRef = useRef<Map<string, CrimeIncident>>(new Map()); // Persistent crime incidents
   const crimeSpawnTimerRef = useRef(0); // Timer for spawning new crime incidents
   
   // Pedestrian system refs
@@ -209,6 +207,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const cachedRoadTileCountRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
   const cachedPopulationRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
   const gridVersionRef = useRef(0);
+  const incidentAnimTimeRef = useRef(0);
 
   const worldStateRef = useRef<WorldRenderState>({
     grid,
@@ -335,956 +334,108 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     };
   }, []);
 
-  const spawnRandomCar = useCallback(() => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    if (!currentGrid || currentGridSize <= 0) return false;
-    
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const tileX = Math.floor(Math.random() * currentGridSize);
-      const tileY = Math.floor(Math.random() * currentGridSize);
-      if (!isRoadTile(currentGrid, currentGridSize, tileX, tileY)) continue;
-      
-      const options = getDirectionOptions(currentGrid, currentGridSize, tileX, tileY);
-      if (options.length === 0) continue;
-      
-      const direction = options[Math.floor(Math.random() * options.length)];
-      carsRef.current.push({
-        id: carIdRef.current++,
-        tileX,
-        tileY,
-        direction,
-        progress: Math.random() * 0.8,
-        speed: (0.35 + Math.random() * 0.35) * 0.7,
-        age: 0,
-        maxAge: 1800 + Math.random() * 2700,
-        color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
-        laneOffset: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 3),
-      });
-      return true;
-    }
-    
-    return false;
-  }, []);
+  const trafficContext = useMemo<TrafficSystemContext>(() => ({
+    worldStateRef,
+    carsRef,
+    carIdRef,
+    carSpawnTimerRef,
+    pedestriansRef,
+    pedestrianIdRef,
+    pedestrianSpawnTimerRef,
+    emergencyVehiclesRef,
+    emergencyVehicleIdRef,
+    emergencyDispatchTimerRef,
+    activeFiresRef,
+    activeCrimesRef,
+    activeCrimeIncidentsRef,
+    crimeSpawnTimerRef,
+    cachedRoadTileCountRef,
+    gridVersionRef,
+    incidentAnimTimeRef,
+    policeCoverage: state.services.police,
+    population: state.stats.population,
+    isMobile,
+  }), [state.services.police, state.stats.population, isMobile]);
 
-  // Find residential buildings for pedestrian spawning (uses imported utility)
-  const findResidentialBuildingsCallback = useCallback((): { x: number; y: number }[] => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    return findResidentialBuildings(currentGrid, currentGridSize);
-  }, []);
+  const spawnCrimeIncidents = useCallback(
+    (delta: number) => spawnCrimeIncidentsSystem(trafficContext, delta),
+    [trafficContext],
+  );
 
-  // Find destinations for pedestrians (uses imported utility)
-  const findPedestrianDestinationsCallback = useCallback((): { x: number; y: number; type: PedestrianDestType }[] => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    return findPedestrianDestinations(currentGrid, currentGridSize);
-  }, []);
+  const updateCrimeIncidents = useCallback(
+    (delta: number) => updateCrimeIncidentsSystem(trafficContext, delta),
+    [trafficContext],
+  );
 
-  // Spawn a pedestrian from a residential building to a destination
-  const spawnPedestrian = useCallback(() => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    if (!currentGrid || currentGridSize <= 0) return false;
-    
-    const residentials = findResidentialBuildingsCallback();
-    if (residentials.length === 0) {
-      return false;
-    }
-    
-    const destinations = findPedestrianDestinationsCallback();
-    if (destinations.length === 0) {
-      return false;
-    }
-    
-    // Pick a random residential building as home
-    const home = residentials[Math.floor(Math.random() * residentials.length)];
-    
-    // Pick a random destination
-    const dest = destinations[Math.floor(Math.random() * destinations.length)];
-    
-    // Find path from home to destination via roads
-    const path = findPathOnRoads(currentGrid, currentGridSize, home.x, home.y, dest.x, dest.y);
-    if (!path || path.length === 0) {
-      return false;
-    }
-    
-    // Start at a random point along the path for better distribution
-    const startIndex = Math.floor(Math.random() * path.length);
-    const startTile = path[startIndex];
-    
-    // Determine initial direction based on next tile in path
-    let direction: CarDirection = 'south';
-    if (startIndex + 1 < path.length) {
-      const nextTile = path[startIndex + 1];
-      const dir = getDirectionToTile(startTile.x, startTile.y, nextTile.x, nextTile.y);
-      if (dir) direction = dir;
-    } else if (startIndex > 0) {
-      // At end of path, use previous tile to determine direction
-      const prevTile = path[startIndex - 1];
-      const dir = getDirectionToTile(prevTile.x, prevTile.y, startTile.x, startTile.y);
-      if (dir) direction = dir;
-    }
-    
-    pedestriansRef.current.push({
-      id: pedestrianIdRef.current++,
-      tileX: startTile.x,
-      tileY: startTile.y,
-      direction,
-      progress: Math.random(),
-      speed: 0.12 + Math.random() * 0.08, // Pedestrians are slower than cars
-      pathIndex: startIndex,
-      age: 0,
-      maxAge: 60 + Math.random() * 90, // 60-150 seconds lifespan
-      skinColor: PEDESTRIAN_SKIN_COLORS[Math.floor(Math.random() * PEDESTRIAN_SKIN_COLORS.length)],
-      shirtColor: PEDESTRIAN_SHIRT_COLORS[Math.floor(Math.random() * PEDESTRIAN_SHIRT_COLORS.length)],
-      walkOffset: Math.random() * Math.PI * 2,
-      sidewalkSide: Math.random() < 0.5 ? 'left' : 'right',
-      destType: dest.type,
-      homeX: home.x,
-      homeY: home.y,
-      destX: dest.x,
-      destY: dest.y,
-      returningHome: startIndex >= path.length - 1, // If starting at end, they're returning
-      path,
-    });
-    
-    return true;
-  }, [findResidentialBuildingsCallback, findPedestrianDestinationsCallback]);
+  const updateEmergencyVehicles = useCallback(
+    (delta: number) => updateEmergencyVehiclesSystem(trafficContext, delta),
+    [trafficContext],
+  );
 
-  // Find stations (uses imported utility)
-  const findStationsCallback = useCallback((type: 'fire_station' | 'police_station'): { x: number; y: number }[] => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    return findStations(currentGrid, currentGridSize, type);
-  }, []);
+  const updateCars = useCallback(
+    (delta: number) => updateCarsSystem(trafficContext, delta),
+    [trafficContext],
+  );
 
-  // Find fires (uses imported utility)
-  const findFiresCallback = useCallback((): { x: number; y: number }[] => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    return findFires(currentGrid, currentGridSize);
-  }, []);
+  const updatePedestrians = useCallback(
+    (delta: number) => updatePedestriansSystem(trafficContext, delta),
+    [trafficContext],
+  );
 
-  // Spawn new crime incidents periodically (persistent like fires)
-  const spawnCrimeIncidents = useCallback((delta: number) => {
-    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
-    if (!currentGrid || currentGridSize <= 0 || currentSpeed === 0) return;
-    
-    const speedMultiplier = currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2 : 3;
-    crimeSpawnTimerRef.current -= delta * speedMultiplier;
-    
-    // Spawn new crimes every 3-5 seconds (game time adjusted)
-    if (crimeSpawnTimerRef.current > 0) return;
-    crimeSpawnTimerRef.current = 3 + Math.random() * 2;
-    
-    // Collect eligible tiles for crime (buildings with activity)
-    const eligibleTiles: { x: number; y: number; policeCoverage: number }[] = [];
-    
-    for (let y = 0; y < currentGridSize; y++) {
-      for (let x = 0; x < currentGridSize; x++) {
-        const tile = currentGrid[y][x];
-        // Only consider populated buildings (residential/commercial/industrial)
-        // FIX: Proper parentheses for operator precedence
-        const isBuilding = tile.building.type !== 'grass' && 
-            tile.building.type !== 'water' && 
-            tile.building.type !== 'road' && 
-            tile.building.type !== 'tree' &&
-            tile.building.type !== 'empty';
-        const hasActivity = tile.building.population > 0 || tile.building.jobs > 0;
-        
-        if (isBuilding && hasActivity) {
-          const policeCoverage = state.services.police[y]?.[x] || 0;
-          // Crime can happen anywhere, but more likely in low-coverage areas
-          eligibleTiles.push({ x, y, policeCoverage });
-        }
-      }
-    }
-    
-    if (eligibleTiles.length === 0) return;
-    
-    // Determine how many new crimes to spawn (based on city size and coverage)
-    const avgCoverage = eligibleTiles.reduce((sum, t) => sum + t.policeCoverage, 0) / eligibleTiles.length;
-    const baseChance = avgCoverage < 20 ? 0.4 : avgCoverage < 40 ? 0.25 : avgCoverage < 60 ? 0.15 : 0.08;
-    
-    // Max active crimes based on population (more people = more potential crime)
-    const population = state.stats.population;
-    const maxActiveCrimes = Math.max(2, Math.floor(population / 500));
-    
-    if (activeCrimeIncidentsRef.current.size >= maxActiveCrimes) return;
-    
-    // Try to spawn 1-2 crimes
-    const crimesToSpawn = Math.random() < 0.3 ? 2 : 1;
-    
-    for (let i = 0; i < crimesToSpawn; i++) {
-      if (activeCrimeIncidentsRef.current.size >= maxActiveCrimes) break;
-      if (Math.random() > baseChance) continue;
-      
-      // Weight selection toward low-coverage areas
-      const weightedTiles = eligibleTiles.filter(t => {
-        const key = `${t.x},${t.y}`;
-        if (activeCrimeIncidentsRef.current.has(key)) return false;
-        // Higher weight for lower coverage
-        const weight = Math.max(0.1, 1 - t.policeCoverage / 100);
-        return Math.random() < weight;
-      });
-      
-      if (weightedTiles.length === 0) continue;
-      
-      const target = weightedTiles[Math.floor(Math.random() * weightedTiles.length)];
-      const key = `${target.x},${target.y}`;
-      
-      // Different crime types with different durations
-      const crimeTypes: Array<'robbery' | 'burglary' | 'disturbance' | 'traffic'> = ['robbery', 'burglary', 'disturbance', 'traffic'];
-      const crimeType = crimeTypes[Math.floor(Math.random() * crimeTypes.length)];
-      const duration = crimeType === 'traffic' ? 15 : crimeType === 'disturbance' ? 20 : 30; // Seconds to resolve if no police
-      
-      activeCrimeIncidentsRef.current.set(key, {
-        x: target.x,
-        y: target.y,
-        type: crimeType,
-        timeRemaining: duration,
-      });
-    }
-  }, [state.services.police, state.stats.population]);
-  
-  // Update crime incidents (decay over time if not responded to)
-  const updateCrimeIncidents = useCallback((delta: number) => {
-    const { speed: currentSpeed } = worldStateRef.current;
-    if (currentSpeed === 0) return;
-    
-    const speedMultiplier = currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2 : 3;
-    const keysToDelete: string[] = [];
-    
-    // Iterate and track which crimes to delete
-    activeCrimeIncidentsRef.current.forEach((crime, key) => {
-      // If police car is responding, don't decay
-      if (activeCrimesRef.current.has(key)) return;
-      
-      // Update time remaining by creating a new crime object
-      const newTimeRemaining = crime.timeRemaining - delta * speedMultiplier;
-      if (newTimeRemaining <= 0) {
-        // Crime "resolved" without police (criminal escaped, situation de-escalated)
-        keysToDelete.push(key);
-      } else {
-        // Update the crime's time remaining
-        activeCrimeIncidentsRef.current.set(key, { ...crime, timeRemaining: newTimeRemaining });
-      }
-    });
-    
-    // Delete expired crimes
-    keysToDelete.forEach(key => activeCrimeIncidentsRef.current.delete(key));
-  }, []);
-  
-  // Find active crime incidents that need police response
-  const findCrimeIncidents = useCallback((): { x: number; y: number }[] => {
-    return Array.from(activeCrimeIncidentsRef.current.values()).map(c => ({ x: c.x, y: c.y }));
-  }, []);
+  const drawCars = useCallback(
+    (ctx: CanvasRenderingContext2D) => drawCarsLayer(trafficContext, ctx),
+    [trafficContext],
+  );
 
-  // Dispatch emergency vehicle
-  const dispatchEmergencyVehicle = useCallback((
-    type: EmergencyVehicleType,
-    stationX: number,
-    stationY: number,
-    targetX: number,
-    targetY: number
-  ): boolean => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    if (!currentGrid || currentGridSize <= 0) return false;
+  const drawPedestrians = useCallback(
+    (ctx: CanvasRenderingContext2D) => drawPedestriansLayer(trafficContext, ctx),
+    [trafficContext],
+  );
 
-    const path = findPathOnRoads(currentGrid, currentGridSize, stationX, stationY, targetX, targetY);
-    if (!path || path.length === 0) return false;
+  const drawEmergencyVehicles = useCallback(
+    (ctx: CanvasRenderingContext2D) => drawEmergencyVehiclesLayer(trafficContext, ctx),
+    [trafficContext],
+  );
 
-    const startTile = path[0];
-    let direction: CarDirection = 'south'; // Default direction
-    
-    // If path has at least 2 tiles, get direction from first to second
-    if (path.length >= 2) {
-      const nextTile = path[1];
-      const dir = getDirectionToTile(startTile.x, startTile.y, nextTile.x, nextTile.y);
-      if (dir) direction = dir;
-    }
+  const drawIncidentIndicators = useCallback(
+    (ctx: CanvasRenderingContext2D, delta: number) => drawIncidentIndicatorsLayer(trafficContext, ctx, delta),
+    [trafficContext],
+  );
 
-    emergencyVehiclesRef.current.push({
-      id: emergencyVehicleIdRef.current++,
-      type,
-      tileX: startTile.x,
-      tileY: startTile.y,
-      direction,
-      progress: 0,
-      speed: type === 'fire_truck' ? 0.8 : 0.9, // Emergency vehicles are faster
-      state: 'dispatching',
-      stationX,
-      stationY,
-      targetX,
-      targetY,
-      path,
-      pathIndex: 0,
-      respondTime: 0,
-      laneOffset: 0, // Emergency vehicles drive in the center
-      flashTimer: 0,
-    });
+  const aerialContext = useMemo<AerialSystemContext>(() => ({
+    worldStateRef,
+    airplanesRef,
+    airplaneIdRef,
+    airplaneSpawnTimerRef,
+    helicoptersRef,
+    helicopterIdRef,
+    helicopterSpawnTimerRef,
+    gridVersionRef,
+    cachedPopulationRef,
+    navLightFlashTimerRef,
+    isMobile,
+    hour,
+  }), [hour, isMobile]);
 
-    return true;
-  }, []);
+  const updateAirplanes = useCallback(
+    (delta: number) => updateAirplanesSystem(aerialContext, delta),
+    [aerialContext],
+  );
 
-  // Update emergency vehicles dispatch logic
-  const updateEmergencyDispatch = useCallback(() => {
-    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
-    if (!currentGrid || currentGridSize <= 0 || currentSpeed === 0) return;
-    
-    const fires = findFiresCallback();
-    const fireStations = findStationsCallback('fire_station');
-    
-    for (const fire of fires) {
-      const fireKey = `${fire.x},${fire.y}`;
-      if (activeFiresRef.current.has(fireKey)) continue;
-      
-      // Find nearest fire station
-      let nearestStation: { x: number; y: number } | null = null;
-      let nearestDist = Infinity;
-      
-      for (const station of fireStations) {
-        const dist = Math.abs(station.x - fire.x) + Math.abs(station.y - fire.y);
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestStation = station;
-        }
-      }
-      
-      if (nearestStation) {
-        if (dispatchEmergencyVehicle('fire_truck', nearestStation.x, nearestStation.y, fire.x, fire.y)) {
-          activeFiresRef.current.add(fireKey);
-        }
-      }
-    }
+  const updateHelicopters = useCallback(
+    (delta: number) => updateHelicoptersSystem(aerialContext, delta),
+    [aerialContext],
+  );
 
-    // Find crimes that need police dispatched
-    const crimes = findCrimeIncidents();
-    const policeStations = findStationsCallback('police_station');
-    
-    // Limit police dispatches per update (increased for more action)
-    let dispatched = 0;
-    const maxDispatchPerCheck = Math.max(3, Math.min(6, policeStations.length * 2)); // Scale with stations
-    for (const crime of crimes) {
-      if (dispatched >= maxDispatchPerCheck) break;
-      
-      const crimeKey = `${crime.x},${crime.y}`;
-      if (activeCrimesRef.current.has(crimeKey)) continue;
-      
-      // Find nearest police station
-      let nearestStation: { x: number; y: number } | null = null;
-      let nearestDist = Infinity;
-      
-      for (const station of policeStations) {
-        const dist = Math.abs(station.x - crime.x) + Math.abs(station.y - crime.y);
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestStation = station;
-        }
-      }
-      
-      if (nearestStation) {
-        if (dispatchEmergencyVehicle('police_car', nearestStation.x, nearestStation.y, crime.x, crime.y)) {
-          activeCrimesRef.current.add(crimeKey);
-          dispatched++;
-        }
-      }
-    }
-  }, [findFiresCallback, findCrimeIncidents, findStationsCallback, dispatchEmergencyVehicle]);
+  const drawAirplanes = useCallback(
+    (ctx: CanvasRenderingContext2D) => drawAirplanesLayer(aerialContext, ctx),
+    [aerialContext],
+  );
 
-  // Update emergency vehicles movement and state
-  const updateEmergencyVehicles = useCallback((delta: number) => {
-    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
-    if (!currentGrid || currentGridSize <= 0) {
-      emergencyVehiclesRef.current = [];
-      return;
-    }
-
-    const speedMultiplier = currentSpeed === 0 ? 0 : currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2.5 : 4;
-    
-    // Dispatch check every second or so
-    emergencyDispatchTimerRef.current -= delta;
-    if (emergencyDispatchTimerRef.current <= 0) {
-      updateEmergencyDispatch();
-      emergencyDispatchTimerRef.current = 1.5;
-    }
-
-    const updatedVehicles: EmergencyVehicle[] = [];
-    
-    for (const vehicle of [...emergencyVehiclesRef.current]) {
-      // Update flash timer for lights
-      vehicle.flashTimer += delta * 8;
-      
-      if (vehicle.state === 'responding') {
-        // Check if vehicle is still on a valid road (road might have been bulldozed)
-        if (!isRoadTile(currentGrid, currentGridSize, vehicle.tileX, vehicle.tileY)) {
-          const targetKey = `${vehicle.targetX},${vehicle.targetY}`;
-          if (vehicle.type === 'fire_truck') {
-            activeFiresRef.current.delete(targetKey);
-          } else {
-            activeCrimesRef.current.delete(targetKey);
-            activeCrimeIncidentsRef.current.delete(targetKey); // Also clear the crime incident
-          }
-          continue; // Remove vehicle
-        }
-        
-        // At the scene - spend some time responding
-        vehicle.respondTime += delta * speedMultiplier;
-        const respondDuration = vehicle.type === 'fire_truck' ? 8 : 5; // Fire trucks stay longer
-        
-        if (vehicle.respondTime >= respondDuration) {
-          // Done responding - crime is resolved, calculate return path
-          const targetKey = `${vehicle.targetX},${vehicle.targetY}`;
-          
-          // Clear the crime incident when police finish responding
-          if (vehicle.type === 'police_car') {
-            activeCrimeIncidentsRef.current.delete(targetKey);
-          }
-          
-          const returnPath = findPathOnRoads(
-            currentGrid, currentGridSize,
-            vehicle.tileX, vehicle.tileY,
-            vehicle.stationX, vehicle.stationY
-          );
-          
-          if (returnPath && returnPath.length >= 2) {
-            vehicle.path = returnPath;
-            vehicle.pathIndex = 0;
-            vehicle.state = 'returning';
-            vehicle.progress = 0;
-            
-            const nextTile = returnPath[1];
-            const dir = getDirectionToTile(vehicle.tileX, vehicle.tileY, nextTile.x, nextTile.y);
-            if (dir) vehicle.direction = dir;
-          } else if (returnPath && returnPath.length === 1) {
-            // Already at station's road - remove vehicle
-            if (vehicle.type === 'fire_truck') {
-              activeFiresRef.current.delete(targetKey);
-            } else {
-              activeCrimesRef.current.delete(targetKey);
-            }
-            continue;
-          } else {
-            // Can't find return path - remove vehicle and clear tracking
-            if (vehicle.type === 'fire_truck') {
-              activeFiresRef.current.delete(targetKey);
-            } else {
-              activeCrimesRef.current.delete(targetKey);
-            }
-            continue;
-          }
-        }
-        
-        updatedVehicles.push(vehicle);
-        continue;
-      }
-      
-      // Check if vehicle is still on a valid road
-      if (!isRoadTile(currentGrid, currentGridSize, vehicle.tileX, vehicle.tileY)) {
-        const targetKey = `${vehicle.targetX},${vehicle.targetY}`;
-        if (vehicle.type === 'fire_truck') {
-          activeFiresRef.current.delete(targetKey);
-        } else {
-          activeCrimesRef.current.delete(targetKey);
-          activeCrimeIncidentsRef.current.delete(targetKey); // Also clear the crime incident
-        }
-        continue;
-      }
-      
-      // Bounds check - remove vehicle if out of bounds
-      if (vehicle.tileX < 0 || vehicle.tileX >= currentGridSize || 
-          vehicle.tileY < 0 || vehicle.tileY >= currentGridSize) {
-        const targetKey = `${vehicle.targetX},${vehicle.targetY}`;
-        if (vehicle.type === 'fire_truck') {
-          activeFiresRef.current.delete(targetKey);
-        } else {
-          activeCrimesRef.current.delete(targetKey);
-          activeCrimeIncidentsRef.current.delete(targetKey); // Also clear the crime incident
-        }
-        continue; // Remove vehicle
-      }
-      
-      // Move vehicle along path
-      vehicle.progress += vehicle.speed * delta * speedMultiplier;
-      
-      let shouldRemove = false;
-      
-      // Handle edge case: path has only 1 tile (already at destination)
-      if (vehicle.path.length === 1 && vehicle.state === 'dispatching') {
-        vehicle.state = 'responding';
-        vehicle.respondTime = 0;
-        vehicle.progress = 0;
-        updatedVehicles.push(vehicle);
-        continue;
-      }
-      
-      while (vehicle.progress >= 1 && vehicle.pathIndex < vehicle.path.length - 1) {
-        vehicle.pathIndex++;
-        vehicle.progress -= 1;
-        
-        const currentTile = vehicle.path[vehicle.pathIndex];
-        
-        // Validate the next tile is in bounds
-        if (currentTile.x < 0 || currentTile.x >= currentGridSize || 
-            currentTile.y < 0 || currentTile.y >= currentGridSize) {
-          shouldRemove = true;
-          break;
-        }
-        
-        vehicle.tileX = currentTile.x;
-        vehicle.tileY = currentTile.y;
-        
-        // Check if reached destination
-        if (vehicle.pathIndex >= vehicle.path.length - 1) {
-          if (vehicle.state === 'dispatching') {
-            // Arrived at emergency scene
-            vehicle.state = 'responding';
-            vehicle.respondTime = 0;
-            vehicle.progress = 0; // Reset progress to keep vehicle centered on road tile
-          } else if (vehicle.state === 'returning') {
-            // Arrived back at station - remove vehicle
-            shouldRemove = true;
-          }
-          break;
-        }
-        
-        // Update direction for next segment
-        if (vehicle.pathIndex + 1 < vehicle.path.length) {
-          const nextTile = vehicle.path[vehicle.pathIndex + 1];
-          const dir = getDirectionToTile(vehicle.tileX, vehicle.tileY, nextTile.x, nextTile.y);
-          if (dir) vehicle.direction = dir;
-        }
-      }
-      
-      if (shouldRemove) {
-        const targetKey = `${vehicle.targetX},${vehicle.targetY}`;
-        if (vehicle.type === 'fire_truck') {
-          activeFiresRef.current.delete(targetKey);
-        } else {
-          activeCrimesRef.current.delete(targetKey);
-          activeCrimeIncidentsRef.current.delete(targetKey); // Also clear the crime incident
-        }
-        continue; // Don't add to updated list
-      }
-      
-      updatedVehicles.push(vehicle);
-    }
-    
-    emergencyVehiclesRef.current = updatedVehicles;
-  }, [updateEmergencyDispatch]);
-
-  const updateCars = useCallback((delta: number) => {
-    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
-    if (!currentGrid || currentGridSize <= 0) {
-      carsRef.current = [];
-      return;
-    }
-    
-    // Speed multiplier: 0 = paused, 1 = normal, 2 = fast (2x), 3 = very fast (4x)
-    const speedMultiplier = currentSpeed === 0 ? 0 : currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2.5 : 4;
-    
-    // Reduce max cars on mobile for better performance
-    const baseMaxCars = 160;
-    const maxCars = Math.min(baseMaxCars, Math.max(16, Math.floor(currentGridSize * (2))));
-    carSpawnTimerRef.current -= delta;
-    if (carsRef.current.length < maxCars && carSpawnTimerRef.current <= 0) {
-      if (spawnRandomCar()) {
-        carSpawnTimerRef.current = 0.9 + Math.random() * 1.3;
-      } else {
-        carSpawnTimerRef.current = 0.5;
-      }
-    }
-    
-    const updatedCars: Car[] = [];
-    for (const car of [...carsRef.current]) {
-      let alive = true;
-      
-      car.age += delta;
-      if (car.age > car.maxAge) {
-        continue;
-      }
-      
-      if (!isRoadTile(currentGrid, currentGridSize, car.tileX, car.tileY)) {
-        continue;
-      }
-      
-      car.progress += car.speed * delta * speedMultiplier;
-      let guard = 0;
-      while (car.progress >= 1 && guard < 4) {
-        guard++;
-        const meta = DIRECTION_META[car.direction];
-        car.tileX += meta.step.x;
-        car.tileY += meta.step.y;
-        
-        if (!isRoadTile(currentGrid, currentGridSize, car.tileX, car.tileY)) {
-          alive = false;
-          break;
-        }
-        
-        car.progress -= 1;
-        const nextDirection = pickNextDirection(car.direction, currentGrid, currentGridSize, car.tileX, car.tileY);
-        if (!nextDirection) {
-          alive = false;
-          break;
-        }
-        car.direction = nextDirection;
-      }
-      
-      if (alive) {
-        updatedCars.push(car);
-      }
-    }
-    
-    carsRef.current = updatedCars;
-  }, [spawnRandomCar, isMobile]);
-
-  // Update pedestrians - only when zoomed in enough
-  const updatePedestrians = useCallback((delta: number) => {
-    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed, zoom: currentZoom } = worldStateRef.current;
-    
-    // Clear pedestrians if zoomed out (mobile requires higher zoom level)
-    const minZoomForPedestrians = isMobile ? 0.8 : PEDESTRIAN_MIN_ZOOM;
-    if (currentZoom < minZoomForPedestrians) {
-      pedestriansRef.current = [];
-      return;
-    }
-    
-    if (!currentGrid || currentGridSize <= 0) {
-      pedestriansRef.current = [];
-      return;
-    }
-    
-    // Speed multiplier
-    const speedMultiplier = currentSpeed === 0 ? 0 : currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2.5 : 4;
-    
-    // Get cached road tile count (only recalculate when grid changes)
-    const currentGridVersion = gridVersionRef.current;
-    let roadTileCount: number;
-    if (cachedRoadTileCountRef.current.gridVersion === currentGridVersion) {
-      roadTileCount = cachedRoadTileCountRef.current.count;
-    } else {
-      // Recalculate and cache
-      roadTileCount = 0;
-      for (let y = 0; y < currentGridSize; y++) {
-        for (let x = 0; x < currentGridSize; x++) {
-          if (currentGrid[y][x].building.type === 'road') {
-            roadTileCount++;
-          }
-        }
-      }
-      cachedRoadTileCountRef.current = { count: roadTileCount, gridVersion: currentGridVersion };
-    }
-    
-    // Spawn pedestrians - scale with road network size, reduced on mobile
-    // Mobile: max 50 pedestrians, 0.8 per road tile
-    // Desktop: max 200+ pedestrians, 3 per road tile
-    const maxPedestrians = isMobile 
-      ? Math.min(50, Math.max(20, Math.floor(roadTileCount * 0.8)))
-      : Math.max(200, roadTileCount * 3);
-    pedestrianSpawnTimerRef.current -= delta;
-    if (pedestriansRef.current.length < maxPedestrians && pedestrianSpawnTimerRef.current <= 0) {
-      // Spawn fewer pedestrians at once on mobile
-      let spawnedCount = 0;
-      const spawnBatch = isMobile 
-        ? Math.min(8, Math.max(3, Math.floor(roadTileCount / 25)))
-        : Math.min(50, Math.max(20, Math.floor(roadTileCount / 10)));
-      for (let i = 0; i < spawnBatch; i++) {
-        if (spawnPedestrian()) {
-          spawnedCount++;
-        }
-      }
-      // Slower spawn rate on mobile
-      pedestrianSpawnTimerRef.current = spawnedCount > 0 ? (isMobile ? 0.15 : 0.02) : (isMobile ? 0.08 : 0.01);
-    }
-    
-    const updatedPedestrians: Pedestrian[] = [];
-    
-    for (const ped of [...pedestriansRef.current]) {
-      let alive = true;
-      
-      // Update age
-      ped.age += delta;
-      if (ped.age > ped.maxAge) {
-        continue;
-      }
-      
-      // Update walk animation
-      ped.walkOffset += delta * 8;
-      
-      // Check if still on valid road
-      if (!isRoadTile(currentGrid, currentGridSize, ped.tileX, ped.tileY)) {
-        continue;
-      }
-      
-      // Move pedestrian along path
-      ped.progress += ped.speed * delta * speedMultiplier;
-      
-      // Handle single-tile paths (already at destination)
-      if (ped.path.length === 1 && ped.progress >= 1) {
-        if (!ped.returningHome) {
-          ped.returningHome = true;
-          const returnPath = findPathOnRoads(currentGrid, currentGridSize, ped.destX, ped.destY, ped.homeX, ped.homeY);
-          if (returnPath && returnPath.length > 0) {
-            ped.path = returnPath;
-            ped.pathIndex = 0;
-            ped.progress = 0;
-            ped.tileX = returnPath[0].x;
-            ped.tileY = returnPath[0].y;
-            if (returnPath.length > 1) {
-              const nextTile = returnPath[1];
-              const dir = getDirectionToTile(returnPath[0].x, returnPath[0].y, nextTile.x, nextTile.y);
-              if (dir) ped.direction = dir;
-            }
-          } else {
-            continue; // Remove pedestrian
-          }
-        } else {
-          continue; // Arrived home, remove
-        }
-      }
-      
-      while (ped.progress >= 1 && ped.pathIndex < ped.path.length - 1) {
-        ped.pathIndex++;
-        ped.progress -= 1;
-        
-        const currentTile = ped.path[ped.pathIndex];
-        
-        // Bounds check
-        if (currentTile.x < 0 || currentTile.x >= currentGridSize ||
-            currentTile.y < 0 || currentTile.y >= currentGridSize) {
-          alive = false;
-          break;
-        }
-        
-        ped.tileX = currentTile.x;
-        ped.tileY = currentTile.y;
-        
-        // Check if reached end of path
-        if (ped.pathIndex >= ped.path.length - 1) {
-          if (!ped.returningHome) {
-            // Arrived at destination - start returning home
-            ped.returningHome = true;
-            const returnPath = findPathOnRoads(currentGrid, currentGridSize, ped.destX, ped.destY, ped.homeX, ped.homeY);
-            if (returnPath && returnPath.length > 0) {
-              ped.path = returnPath;
-              ped.pathIndex = 0;
-              ped.progress = 0;
-              // Update direction for return trip
-              if (returnPath.length > 1) {
-                const nextTile = returnPath[1];
-                const dir = getDirectionToTile(returnPath[0].x, returnPath[0].y, nextTile.x, nextTile.y);
-                if (dir) ped.direction = dir;
-              }
-            } else {
-              alive = false;
-            }
-          } else {
-            // Arrived back home - remove pedestrian
-            alive = false;
-          }
-          break;
-        }
-        
-        // Update direction for next segment
-        if (ped.pathIndex + 1 < ped.path.length) {
-          const nextTile = ped.path[ped.pathIndex + 1];
-          const dir = getDirectionToTile(ped.tileX, ped.tileY, nextTile.x, nextTile.y);
-          if (dir) ped.direction = dir;
-        }
-      }
-      
-      // Handle case where pedestrian is already at the last tile with progress >= 1
-      // (can happen when spawned at end of path, or if progress accumulates)
-      if (alive && ped.progress >= 1 && ped.pathIndex >= ped.path.length - 1) {
-        if (!ped.returningHome) {
-          // Arrived at destination - start returning home
-          ped.returningHome = true;
-          const returnPath = findPathOnRoads(currentGrid, currentGridSize, ped.destX, ped.destY, ped.homeX, ped.homeY);
-          if (returnPath && returnPath.length > 0) {
-            ped.path = returnPath;
-            ped.pathIndex = 0;
-            ped.progress = 0;
-            ped.tileX = returnPath[0].x;
-            ped.tileY = returnPath[0].y;
-            // Update direction for return trip
-            if (returnPath.length > 1) {
-              const nextTile = returnPath[1];
-              const dir = getDirectionToTile(returnPath[0].x, returnPath[0].y, nextTile.x, nextTile.y);
-              if (dir) ped.direction = dir;
-            }
-          } else {
-            alive = false;
-          }
-        } else {
-          // Arrived back home - remove pedestrian
-          alive = false;
-        }
-      }
-      
-      if (alive) {
-        updatedPedestrians.push(ped);
-      }
-    }
-    
-    pedestriansRef.current = updatedPedestrians;
-  }, [spawnPedestrian, isMobile]);
-
-  const drawCars = useCallback((ctx: CanvasRenderingContext2D) => {
-    const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    const canvas = ctx.canvas;
-    const dpr = window.devicePixelRatio || 1;
-    
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Early exit if no grid data
-    if (!currentGrid || currentGridSize <= 0 || carsRef.current.length === 0) {
-      return;
-    }
-    
-    ctx.save();
-    ctx.scale(dpr * currentZoom, dpr * currentZoom);
-    ctx.translate(currentOffset.x / currentZoom, currentOffset.y / currentZoom);
-    
-    const viewWidth = canvas.width / (dpr * currentZoom);
-    const viewHeight = canvas.height / (dpr * currentZoom);
-    const viewLeft = -currentOffset.x / currentZoom - TILE_WIDTH;
-    const viewTop = -currentOffset.y / currentZoom - TILE_HEIGHT * 2;
-    const viewRight = viewWidth - currentOffset.x / currentZoom + TILE_WIDTH;
-    const viewBottom = viewHeight - currentOffset.y / currentZoom + TILE_HEIGHT * 2;
-    
-    // Helper function to check if a car is behind a building
-    const isCarBehindBuilding = (carTileX: number, carTileY: number): boolean => {
-      // Only check tiles directly in front (higher depth means drawn later/on top)
-      const carDepth = carTileX + carTileY;
-      
-      // Check a small area - just tiles that could visually cover the car
-      for (let dy = 0; dy <= 1; dy++) {
-        for (let dx = 0; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue; // Skip the car's own tile
-          
-          const checkX = carTileX + dx;
-          const checkY = carTileY + dy;
-          
-          // Skip if out of bounds
-          if (checkX < 0 || checkY < 0 || checkX >= currentGridSize || checkY >= currentGridSize) {
-            continue;
-          }
-          
-          const tile = currentGrid[checkY]?.[checkX];
-          if (!tile) continue;
-          
-          const buildingType = tile.building.type;
-          
-          // Skip roads, grass, empty, water, and trees (these don't hide cars)
-          const skipTypes: BuildingType[] = ['road', 'grass', 'empty', 'water', 'tree'];
-          if (skipTypes.includes(buildingType)) {
-            continue;
-          }
-          
-          // Check if this building tile has higher depth (drawn after/on top)
-          const buildingDepth = checkX + checkY;
-          
-          // Only hide if building is strictly in front (higher depth)
-          if (buildingDepth > carDepth) {
-            return true;
-          }
-        }
-      }
-      
-      return false;
-    };
-    
-    carsRef.current.forEach(car => {
-      const { screenX, screenY } = gridToScreen(car.tileX, car.tileY, 0, 0);
-      const centerX = screenX + TILE_WIDTH / 2;
-      const centerY = screenY + TILE_HEIGHT / 2;
-      const meta = DIRECTION_META[car.direction];
-      const carX = centerX + meta.vec.dx * car.progress + meta.normal.nx * car.laneOffset;
-      const carY = centerY + meta.vec.dy * car.progress + meta.normal.ny * car.laneOffset;
-      
-      if (carX < viewLeft - 40 || carX > viewRight + 40 || carY < viewTop - 60 || carY > viewBottom + 60) {
-        return;
-      }
-      
-      // Check if car is behind a building - if so, skip drawing
-      if (isCarBehindBuilding(car.tileX, car.tileY)) {
-        return;
-      }
-      
-      ctx.save();
-      ctx.translate(carX, carY);
-      ctx.rotate(meta.angle);
-      
-      // Scale down by 30% (multiply by 0.7)
-      const scale = 0.7;
-      
-      ctx.fillStyle = car.color;
-      ctx.beginPath();
-      ctx.moveTo(-10 * scale, -5 * scale);
-      ctx.lineTo(10 * scale, -5 * scale);
-      ctx.lineTo(12 * scale, 0);
-      ctx.lineTo(10 * scale, 5 * scale);
-      ctx.lineTo(-10 * scale, 5 * scale);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Windshield
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      ctx.fillRect(-4 * scale, -2.8 * scale, 7 * scale, 5.6 * scale);
-      
-      // Rear
-      ctx.fillStyle = '#111827';
-      ctx.fillRect(-10 * scale, -4 * scale, 2.4 * scale, 8 * scale);
-      
-      ctx.restore();
-    });
-    
-    ctx.restore();
-  }, []);
-
-  // Draw pedestrians with simple SVG-style sprites (uses extracted utility)
-  const drawPedestrians = useCallback((ctx: CanvasRenderingContext2D) => {
-    const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    const canvas = ctx.canvas;
-    const dpr = window.devicePixelRatio || 1;
-    
-    // Don't draw pedestrians if zoomed out (mobile requires higher zoom)
-    const minZoomForPedestrians = isMobile ? 0.8 : PEDESTRIAN_MIN_ZOOM;
-    if (currentZoom < minZoomForPedestrians) {
-      return;
-    }
-    
-    // Early exit if no pedestrians
-    if (!currentGrid || currentGridSize <= 0 || pedestriansRef.current.length === 0) {
-      return;
-    }
-    
-    ctx.save();
-    ctx.scale(dpr * currentZoom, dpr * currentZoom);
-    ctx.translate(currentOffset.x / currentZoom, currentOffset.y / currentZoom);
-    
-    const viewWidth = canvas.width / (dpr * currentZoom);
-    const viewHeight = canvas.height / (dpr * currentZoom);
-    const viewBounds = {
-      viewLeft: -currentOffset.x / currentZoom - TILE_WIDTH,
-      viewTop: -currentOffset.y / currentZoom - TILE_HEIGHT * 2,
-      viewRight: viewWidth - currentOffset.x / currentZoom + TILE_WIDTH,
-      viewBottom: viewHeight - currentOffset.y / currentZoom + TILE_HEIGHT * 2,
-    };
-    
-    // Use extracted utility function for drawing
-    drawPedestriansUtil(ctx, pedestriansRef.current, currentGrid, currentGridSize, viewBounds);
-    
-    ctx.restore();
-  }, [isMobile]);
-
-  // Find airports (uses imported utility)
-  const findAirportsCallback = useCallback((): { x: number; y: number }[] => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    return findAirports(currentGrid, currentGridSize);
-  }, []);
-
-  // Find heliports (uses imported utility)
-  const findHeliportsCallback = useCallback(() => {
-    const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    return findHeliports(currentGrid, currentGridSize);
-  }, []);
+  const drawHelicopters = useCallback(
+    (ctx: CanvasRenderingContext2D) => drawHelicoptersLayer(aerialContext, ctx),
+    [aerialContext],
+  );
 
   // Find marinas and piers (uses imported utility)
   const findMarinasAndPiersCallback = useCallback(() => {
@@ -2910,156 +2061,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       ctx.restore();
     });
-    
-    ctx.restore();
-  }, []);
-
-  // Animation time ref for incident indicator pulsing
-  const incidentAnimTimeRef = useRef(0);
-  
-  // Draw incident indicators (fires and crimes) with pulsing effect
-  const drawIncidentIndicators = useCallback((ctx: CanvasRenderingContext2D, delta: number) => {
-    const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
-    const canvas = ctx.canvas;
-    const dpr = window.devicePixelRatio || 1;
-    
-    if (!currentGrid || currentGridSize <= 0) return;
-    
-    // Update animation time
-    incidentAnimTimeRef.current += delta;
-    const animTime = incidentAnimTimeRef.current;
-    
-    ctx.save();
-    ctx.scale(dpr * currentZoom, dpr * currentZoom);
-    ctx.translate(currentOffset.x / currentZoom, currentOffset.y / currentZoom);
-    
-    const viewWidth = canvas.width / (dpr * currentZoom);
-    const viewHeight = canvas.height / (dpr * currentZoom);
-    const viewLeft = -currentOffset.x / currentZoom - TILE_WIDTH * 2;
-    const viewTop = -currentOffset.y / currentZoom - TILE_HEIGHT * 4;
-    const viewRight = viewWidth - currentOffset.x / currentZoom + TILE_WIDTH * 2;
-    const viewBottom = viewHeight - currentOffset.y / currentZoom + TILE_HEIGHT * 4;
-    
-    // Draw crime incident indicators
-    activeCrimeIncidentsRef.current.forEach((crime) => {
-      const { screenX, screenY } = gridToScreen(crime.x, crime.y, 0, 0);
-      const centerX = screenX + TILE_WIDTH / 2;
-      const centerY = screenY + TILE_HEIGHT / 2;
-      
-      // View culling
-      if (centerX < viewLeft || centerX > viewRight || centerY < viewTop || centerY > viewBottom) {
-        return;
-      }
-      
-      // Pulsing effect
-      const pulse = Math.sin(animTime * 4) * 0.3 + 0.7;
-      const outerPulse = Math.sin(animTime * 3) * 0.5 + 0.5;
-      
-      // Outer glow ring (expanding pulse) - smaller
-      ctx.beginPath();
-      ctx.arc(centerX, centerY - 8, 18 + outerPulse * 6, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(59, 130, 246, ${0.25 * (1 - outerPulse)})`;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      
-      // Inner pulsing glow (smaller)
-      const gradient = ctx.createRadialGradient(centerX, centerY - 8, 0, centerX, centerY - 8, 14 * pulse);
-      gradient.addColorStop(0, `rgba(59, 130, 246, ${0.5 * pulse})`);
-      gradient.addColorStop(0.5, `rgba(59, 130, 246, ${0.2 * pulse})`);
-      gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
-      ctx.beginPath();
-      ctx.arc(centerX, centerY - 8, 14 * pulse, 0, Math.PI * 2);
-      ctx.fillStyle = gradient;
-      ctx.fill();
-      
-      // Crime icon (small shield with exclamation)
-      ctx.save();
-      ctx.translate(centerX, centerY - 12);
-      
-      // Shield background (smaller)
-      ctx.fillStyle = `rgba(30, 64, 175, ${0.9 * pulse})`;
-      ctx.beginPath();
-      ctx.moveTo(0, -7);
-      ctx.lineTo(6, -4);
-      ctx.lineTo(6, 2);
-      ctx.quadraticCurveTo(0, 8, 0, 8);
-      ctx.quadraticCurveTo(0, 8, -6, 2);
-      ctx.lineTo(-6, -4);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Shield border
-      ctx.strokeStyle = `rgba(147, 197, 253, ${pulse})`;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      
-      // Exclamation mark (smaller)
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(-1, -4, 2, 5);
-      ctx.beginPath();
-      ctx.arc(0, 4, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-      
-      ctx.restore();
-    });
-    
-    // Draw fire indicators (for tiles on fire without visual fire effect already)
-    for (let y = 0; y < currentGridSize; y++) {
-      for (let x = 0; x < currentGridSize; x++) {
-        const tile = currentGrid[y][x];
-        if (!tile.building.onFire) continue;
-        
-        const { screenX, screenY } = gridToScreen(x, y, 0, 0);
-        const centerX = screenX + TILE_WIDTH / 2;
-        const centerY = screenY + TILE_HEIGHT / 2;
-        
-        // View culling
-        if (centerX < viewLeft || centerX > viewRight || centerY < viewTop || centerY > viewBottom) {
-          continue;
-        }
-        
-        // Pulsing effect for fire (faster)
-        const pulse = Math.sin(animTime * 6) * 0.3 + 0.7;
-        const outerPulse = Math.sin(animTime * 4) * 0.5 + 0.5;
-        
-        // Outer glow ring (expanding pulse) - red/orange
-        ctx.beginPath();
-        ctx.arc(centerX, centerY - 12, 22 + outerPulse * 8, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(239, 68, 68, ${0.3 * (1 - outerPulse)})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
-        // Inner danger icon (smaller)
-        ctx.save();
-        ctx.translate(centerX, centerY - 15);
-        
-        // Warning triangle background (smaller)
-        ctx.fillStyle = `rgba(220, 38, 38, ${0.9 * pulse})`;
-        ctx.beginPath();
-        ctx.moveTo(0, -8);
-        ctx.lineTo(8, 5);
-        ctx.lineTo(-8, 5);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Triangle border
-        ctx.strokeStyle = `rgba(252, 165, 165, ${pulse})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        
-        // Fire flame icon inside (smaller)
-        ctx.fillStyle = '#fbbf24';
-        ctx.beginPath();
-        ctx.moveTo(0, -3);
-        ctx.quadraticCurveTo(2.5, 0, 2, 2.5);
-        ctx.quadraticCurveTo(0.5, 1.5, 0, 2.5);
-        ctx.quadraticCurveTo(-0.5, 1.5, -2, 2.5);
-        ctx.quadraticCurveTo(-2.5, 0, 0, -3);
-        ctx.fill();
-        
-        ctx.restore();
-      }
-    }
     
     ctx.restore();
   }, []);
