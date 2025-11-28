@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import { Car, CarDirection, EmergencyVehicle, EmergencyVehicleType, Pedestrian, PedestrianDestType, WorldRenderState, TILE_WIDTH, TILE_HEIGHT } from './types';
-import { CAR_COLORS, PEDESTRIAN_SKIN_COLORS, PEDESTRIAN_SHIRT_COLORS, PEDESTRIAN_MIN_ZOOM, PEDESTRIAN_MIN_ZOOM_MOBILE, DIRECTION_META } from './constants';
+import { CAR_COLORS, PEDESTRIAN_SKIN_COLORS, PEDESTRIAN_SHIRT_COLORS, PEDESTRIAN_MIN_ZOOM, DIRECTION_META } from './constants';
 import { isRoadTile, getDirectionOptions, pickNextDirection, findPathOnRoads, getDirectionToTile, gridToScreen } from './utils';
 import { findResidentialBuildings, findPedestrianDestinations, findStations, findFires } from './gridFinders';
 import { drawPedestrians as drawPedestriansUtil } from './drawPedestrians';
@@ -688,8 +688,7 @@ export function useVehicleSystems(
   const updatePedestrians = useCallback((delta: number) => {
     const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed, zoom: currentZoom } = worldStateRef.current;
     
-    const minZoomForPedestrians = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
-    if (currentZoom < minZoomForPedestrians) {
+    if (currentZoom < PEDESTRIAN_MIN_ZOOM) {
       pedestriansRef.current = [];
       return;
     }
@@ -717,21 +716,17 @@ export function useVehicleSystems(
       cachedRoadTileCountRef.current = { count: roadTileCount, gridVersion: currentGridVersion };
     }
     
-    const maxPedestrians = isMobile 
-      ? Math.min(50, Math.max(20, Math.floor(roadTileCount * 0.8)))
-      : Math.max(200, roadTileCount * 3);
+    const maxPedestrians = Math.max(200, roadTileCount * 3);
     pedestrianSpawnTimerRef.current -= delta;
     if (pedestriansRef.current.length < maxPedestrians && pedestrianSpawnTimerRef.current <= 0) {
       let spawnedCount = 0;
-      const spawnBatch = isMobile 
-        ? Math.min(8, Math.max(3, Math.floor(roadTileCount / 25)))
-        : Math.min(50, Math.max(20, Math.floor(roadTileCount / 10)));
+      const spawnBatch = Math.min(50, Math.max(20, Math.floor(roadTileCount / 10)));
       for (let i = 0; i < spawnBatch; i++) {
         if (spawnPedestrian()) {
           spawnedCount++;
         }
       }
-      pedestrianSpawnTimerRef.current = spawnedCount > 0 ? (isMobile ? 0.15 : 0.02) : (isMobile ? 0.08 : 0.01);
+      pedestrianSpawnTimerRef.current = spawnedCount > 0 ? 0.02 : 0.01;
     }
     
     const updatedPedestrians: Pedestrian[] = [];
@@ -876,7 +871,7 @@ export function useVehicleSystems(
     }
     
     pedestriansRef.current = updatedPedestrians;
-  }, [worldStateRef, gridVersionRef, cachedRoadTileCountRef, pedestriansRef, pedestrianSpawnTimerRef, spawnPedestrian, isMobile, trafficLightTimerRef]);
+  }, [worldStateRef, gridVersionRef, cachedRoadTileCountRef, pedestriansRef, pedestrianSpawnTimerRef, spawnPedestrian, trafficLightTimerRef]);
 
   const drawCars = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -985,8 +980,7 @@ export function useVehicleSystems(
     const canvas = ctx.canvas;
     const dpr = window.devicePixelRatio || 1;
     
-    const minZoomForPedestrians = isMobile ? PEDESTRIAN_MIN_ZOOM_MOBILE : PEDESTRIAN_MIN_ZOOM;
-    if (currentZoom < minZoomForPedestrians) {
+    if (currentZoom < PEDESTRIAN_MIN_ZOOM) {
       return;
     }
     
@@ -1010,7 +1004,7 @@ export function useVehicleSystems(
     drawPedestriansUtil(ctx, pedestriansRef.current, currentGrid, currentGridSize, viewBounds);
     
     ctx.restore();
-  }, [worldStateRef, pedestriansRef, isMobile]);
+  }, [worldStateRef, pedestriansRef]);
 
   const drawEmergencyVehicles = useCallback((ctx: CanvasRenderingContext2D) => {
     const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
