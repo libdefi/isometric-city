@@ -10,6 +10,16 @@ export * from './gridFinders';
 export * from './renderHelpers';
 export * from './drawAircraft';
 export * from './drawPedestrians';
+
+// New modular systems
+export * from './vehicleSystem';
+export * from './crimeSystem';
+export * from './boatSystem';
+export * from './fireworkSystem';
+export * from './smogSystem';
+export * from './buildingHelpers';
+export * from './lightingSystem';
+export * from './inputHandlers';
 export { Sidebar } from './Sidebar';
 export { OverlayModeToggle } from './OverlayModeToggle';
 export { MiniMap } from './MiniMap';

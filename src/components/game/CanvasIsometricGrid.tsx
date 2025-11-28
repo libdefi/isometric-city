@@ -117,8 +117,55 @@ import {
   setupCanvasContext,
   clearCanvas,
 } from '@/components/game/renderHelpers';
-import { drawAirplanes as drawAirplanesUtil, drawHelicopters as drawHelicoptersUtil } from '@/components/game/drawAircraft';
+import { 
+  drawAirplanes as drawAirplanesUtil, 
+  drawHelicopters as drawHelicoptersUtil,
+  updateAirplanes as updateAirplanesSystem,
+  updateHelicopters as updateHelicoptersSystem,
+} from '@/components/game/drawAircraft';
 import { drawPedestrians as drawPedestriansUtil } from '@/components/game/drawPedestrians';
+
+// Import extracted systems for better modularity
+import {
+  spawnRandomCar,
+  updateCars as updateCarsSystem,
+  drawCars as drawCarsSystem,
+  dispatchEmergencyVehicle,
+  updateEmergencyDispatch as updateEmergencyDispatchSystem,
+  updateEmergencyVehicles as updateEmergencyVehiclesSystem,
+  drawEmergencyVehicles as drawEmergencyVehiclesSystem,
+  drawIncidentIndicators as drawIncidentIndicatorsSystem,
+} from '@/components/game/vehicleSystem';
+import {
+  spawnCrimeIncidents as spawnCrimeIncidentsSystem,
+  updateCrimeIncidents as updateCrimeIncidentsSystem,
+  findCrimeIncidents as findCrimeIncidentsSystem,
+} from '@/components/game/crimeSystem';
+import {
+  updateBoats as updateBoatsSystem,
+  drawBoats as drawBoatsSystem,
+} from '@/components/game/boatSystem';
+import {
+  updateFireworks as updateFireworksSystem,
+  drawFireworks as drawFireworksSystem,
+} from '@/components/game/fireworkSystem';
+import {
+  updateSmog as updateSmogSystem,
+  drawSmog as drawSmogSystem,
+} from '@/components/game/smogSystem';
+import {
+  isPartOfMultiTileBuilding,
+  findBuildingOrigin,
+  isPartOfParkBuilding,
+  ALL_PARK_TYPES,
+} from '@/components/game/buildingHelpers';
+import {
+  renderLighting,
+  getDarkness,
+} from '@/components/game/lightingSystem';
+import {
+  getZoomConstraints,
+} from '@/components/game/inputHandlers';
 
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
