@@ -47,6 +47,15 @@ export const SMOG_PARTICLE_GROWTH = 0.5; // How much particles grow per second
 export const SMOG_MAX_PARTICLES_PER_FACTORY = 25; // Maximum particles per factory to prevent memory issues
 export const SMOG_MAX_PARTICLES_PER_FACTORY_MOBILE = 12; // Lower limit on mobile
 
+// Train/Rail system constants
+export const TRAIN_COLORS = ['#1a365d', '#7f1d1d', '#14532d', '#4a1d96', '#713f12']; // Dark blue, maroon, forest green, purple, brown
+export const TRAIN_MIN_SPEED = 0.3; // Tiles per second (minimum)
+export const TRAIN_MAX_SPEED = 0.6; // Tiles per second (maximum)
+export const TRAIN_STATION_WAIT_TIME = 3.0; // Seconds to wait at each station
+export const TRAIN_APPROACH_DISTANCE = 0.4; // Start slowing down at this progress to station
+export const TRAIN_MIN_STATIONS = 2; // Minimum number of stations to spawn trains
+export const TRAIN_CAR_SPACING = 14; // Pixels between train cars
+
 // Firework system constants
 export const FIREWORK_BUILDINGS: BuildingType[] = ['baseball_stadium', 'amusement_park', 'marina_docks_small', 'pier_large'];
 export const FIREWORK_COLORS = [

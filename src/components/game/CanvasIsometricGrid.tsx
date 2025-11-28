@@ -29,6 +29,7 @@ import {
   Pedestrian,
   PedestrianDestType,
   Firework,
+  Train,
   WorldRenderState,
 } from '@/components/game/types';
 import {
@@ -128,6 +129,8 @@ import {
   ROAD_CONFIG,
   TRAFFIC_LIGHT_TIMING,
 } from '@/components/game/trafficSystem';
+import { useTrainSystem, TrainSystemRefs, TrainSystemState } from '@/components/game/trainSystem';
+import { drawRailTrack, drawRailStation, getAdjacentRails, isRailAt } from '@/components/game/railDrawing';
 
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
@@ -202,6 +205,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const boatsRef = useRef<Boat[]>([]);
   const boatIdRef = useRef(0);
   const boatSpawnTimerRef = useRef(0);
+
+  // Train system refs
+  const trainsRef = useRef<Train[]>([]);
+  const trainIdRef = useRef(0);
+  const trainSpawnTimerRef = useRef(0);
 
   // Navigation light flash timer for planes/helicopters/boats at night
   const navLightFlashTimerRef = useRef(0);
@@ -327,6 +335,23 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     updateAirplanes,
     updateHelicopters,
   } = useAircraftSystems(aircraftSystemRefs, aircraftSystemState);
+
+  // Use extracted train system
+  const trainSystemRefs: TrainSystemRefs = {
+    trainsRef,
+    trainIdRef,
+    trainSpawnTimerRef,
+  };
+
+  const trainSystemState: TrainSystemState = {
+    worldStateRef,
+    isMobile,
+  };
+
+  const {
+    updateTrains,
+    drawTrains,
+  } = useTrainSystem(trainSystemRefs, trainSystemState);
   
   useEffect(() => {
     worldStateRef.current.grid = grid;
@@ -1683,6 +1708,13 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       return grid[gridY][gridX].building.type === 'road';
     }
     
+    // Helper function to check if a tile has a rail
+    function hasRail(gridX: number, gridY: number): boolean {
+      if (gridX < 0 || gridX >= gridSize || gridY < 0 || gridY >= gridSize) return false;
+      const type = grid[gridY][gridX].building.type;
+      return type === 'rail' || type === 'rail_station';
+    }
+    
     // Helper function to check if a tile has a marina dock or pier (no beaches next to these)
     // Also checks 'empty' tiles that are part of multi-tile marina buildings
     function hasMarinaPier(gridX: number, gridY: number): boolean {
@@ -2467,6 +2499,24 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       // Handle roads separately with adjacency
       if (buildingType === 'road') {
         drawRoad(ctx, x, y, tile.x, tile.y, zoom);
+        return;
+      }
+      
+      // Handle rails separately with adjacency
+      if (buildingType === 'rail') {
+        const adj = {
+          north: hasRail(tile.x - 1, tile.y),
+          east: hasRail(tile.x, tile.y - 1),
+          south: hasRail(tile.x + 1, tile.y),
+          west: hasRail(tile.x, tile.y + 1),
+        };
+        drawRailTrack(ctx, x, y, adj, zoom);
+        return;
+      }
+      
+      // Handle rail stations
+      if (buildingType === 'rail_station') {
+        drawRailStation(ctx, x, y, 2, zoom, visualHour);
         return;
       }
       
@@ -3487,6 +3537,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         updateAirplanes(delta); // Update airplanes (airport required)
         updateHelicopters(delta); // Update helicopters (hospital/airport required)
         updateBoats(delta); // Update boats (marina/pier required)
+        updateTrains(delta); // Update trains (rail stations required)
         updateFireworks(delta, visualHour); // Update fireworks (nighttime only)
         updateSmog(delta); // Update factory smog particles
         navLightFlashTimerRef.current += delta * 3; // Update nav light flash timer
@@ -3502,6 +3553,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         drawCars(ctx);
         drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
         drawBoats(ctx); // Draw boats on water
+        drawTrains(ctx); // Draw trains on rails
         drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
         drawEmergencyVehicles(ctx); // Draw emergency vehicles!
         drawIncidentIndicators(ctx, delta); // Draw fire/crime incident indicators!
@@ -3513,7 +3565,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, updateTrains, drawTrains, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {

@@ -214,6 +214,46 @@ export type Boat = {
   homeScreenY: number;
 };
 
+// Train types for rail system
+export type TrainState = 'running' | 'stopped_at_station' | 'arriving' | 'departing';
+
+export type TrainCar = {
+  x: number;
+  y: number;
+  angle: number;
+};
+
+export type Train = {
+  id: number;
+  // Position on rail network (tile coordinates + progress within tile)
+  tileX: number;
+  tileY: number;
+  direction: CarDirection;
+  progress: number; // 0-1 within current tile
+  // Train properties
+  speed: number;
+  maxSpeed: number;
+  state: TrainState;
+  // Visual properties
+  color: string;
+  // Train cars (locomotive + carriages)
+  cars: TrainCar[];
+  numCars: number; // 2-4 cars including locomotive
+  // Path through rail network
+  path: { x: number; y: number }[];
+  pathIndex: number;
+  // Station timing
+  stationTimer: number; // Time waiting at station
+  // Home station
+  homeStationX: number;
+  homeStationY: number;
+  // Current destination station
+  destStationX: number;
+  destStationY: number;
+  // Age/lifecycle
+  age: number;
+};
+
 // Smog/smoke particle types for industrial factories
 export type SmogParticle = {
   x: number;

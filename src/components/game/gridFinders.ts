@@ -431,6 +431,153 @@ export function generateTourWaypoints(
 }
 
 /**
+ * Find all rail stations in the city
+ */
+export function findRailStations(
+  grid: Tile[][],
+  gridSize: number
+): { x: number; y: number }[] {
+  if (!grid || gridSize <= 0) return [];
+
+  const stations: { x: number; y: number }[] = [];
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      if (grid[y][x].building.type === 'rail_station') {
+        stations.push({ x, y });
+      }
+    }
+  }
+  return stations;
+}
+
+/**
+ * Check if a tile is a rail tile
+ */
+export function isRailTile(
+  grid: Tile[][],
+  gridSize: number,
+  x: number,
+  y: number
+): boolean {
+  if (x < 0 || y < 0 || x >= gridSize || y >= gridSize) return false;
+  const buildingType = grid[y][x].building.type;
+  return buildingType === 'rail' || buildingType === 'rail_station';
+}
+
+/**
+ * Find adjacent rail tiles for a given position
+ */
+export function getAdjacentRailTiles(
+  grid: Tile[][],
+  gridSize: number,
+  x: number,
+  y: number
+): { north: boolean; east: boolean; south: boolean; west: boolean } {
+  return {
+    north: isRailTile(grid, gridSize, x - 1, y),
+    east: isRailTile(grid, gridSize, x, y - 1),
+    south: isRailTile(grid, gridSize, x + 1, y),
+    west: isRailTile(grid, gridSize, x, y + 1),
+  };
+}
+
+/**
+ * Find path on rail network using BFS
+ */
+export function findPathOnRails(
+  grid: Tile[][],
+  gridSize: number,
+  startX: number,
+  startY: number,
+  targetX: number,
+  targetY: number
+): { x: number; y: number }[] | null {
+  if (!grid || gridSize <= 0) return null;
+
+  // BFS from start to target
+  const queue: { x: number; y: number; path: { x: number; y: number }[] }[] = [
+    { x: startX, y: startY, path: [{ x: startX, y: startY }] }
+  ];
+  const visited = new Set<string>();
+  visited.add(`${startX},${startY}`);
+
+  const directions = [
+    { dx: -1, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: -1 },
+    { dx: 0, dy: 1 },
+  ];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+
+    // Check if we reached the target
+    if (current.x === targetX && current.y === targetY) {
+      return current.path;
+    }
+
+    for (const { dx, dy } of directions) {
+      const nx = current.x + dx;
+      const ny = current.y + dy;
+      const key = `${nx},${ny}`;
+
+      if (nx < 0 || ny < 0 || nx >= gridSize || ny >= gridSize) continue;
+      if (visited.has(key)) continue;
+      if (!isRailTile(grid, gridSize, nx, ny)) continue;
+
+      visited.add(key);
+      queue.push({
+        x: nx,
+        y: ny,
+        path: [...current.path, { x: nx, y: ny }],
+      });
+    }
+  }
+
+  return null; // No path found
+}
+
+/**
+ * Find a rail tile adjacent to a station
+ */
+export function findAdjacentRailToStation(
+  grid: Tile[][],
+  gridSize: number,
+  stationX: number,
+  stationY: number
+): { x: number; y: number } | null {
+  // Check adjacent tiles (including diagonals for 2x2 stations)
+  const offsets = [
+    { dx: -1, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: 0, dy: -1 },
+    { dx: 0, dy: 1 },
+    { dx: -1, dy: -1 },
+    { dx: -1, dy: 1 },
+    { dx: 1, dy: -1 },
+    { dx: 1, dy: 1 },
+    // For 2x2 stations, also check adjacent to corner tiles
+    { dx: 2, dy: 0 },
+    { dx: 2, dy: 1 },
+    { dx: 0, dy: 2 },
+    { dx: 1, dy: 2 },
+    { dx: -1, dy: 1 },
+    { dx: 1, dy: -1 },
+  ];
+
+  for (const { dx, dy } of offsets) {
+    const nx = stationX + dx;
+    const ny = stationY + dy;
+    if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize) {
+      if (grid[ny][nx].building.type === 'rail') {
+        return { x: nx, y: ny };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Calculate total population from the grid (with caching support)
  */
 export function calculateTotalPopulation(
