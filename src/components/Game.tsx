@@ -46,7 +46,6 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
@@ -739,61 +738,6 @@ function BudgetPanel() {
             ))}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Achievements Panel
-function AchievementsPanel() {
-  const { state, setActivePanel } = useGame();
-  const { achievements } = state;
-  
-  const unlocked = achievements.filter(a => a.unlocked);
-  const locked = achievements.filter(a => !a.unlocked);
-  
-  return (
-    <Dialog open={true} onOpenChange={() => setActivePanel('none')}>
-      <DialogContent className="max-w-[500px] max-h-[600px]">
-        <DialogHeader>
-          <DialogTitle>Achievements ({unlocked.length}/{achievements.length})</DialogTitle>
-        </DialogHeader>
-        
-        <ScrollArea className="max-h-[450px] pr-4">
-          {unlocked.length > 0 && (
-            <div className="mb-6">
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">Unlocked</div>
-              <div className="grid grid-cols-2 gap-2">
-                {unlocked.map(a => (
-                  <Card key={a.id} className="p-3 border-l-2 border-l-primary">
-                    <div className="text-foreground text-sm font-medium">{a.name}</div>
-                    <div className="text-muted-foreground text-xs mt-1">{a.description}</div>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          <div>
-            <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-3">Locked</div>
-            <div className="grid grid-cols-2 gap-2">
-              {locked.map(a => (
-                <Card key={a.id} className="p-3 opacity-60">
-                  <div className="text-foreground text-sm font-medium">{a.name}</div>
-                  <div className="text-muted-foreground text-xs mt-1">{a.requirement}</div>
-                  {a.progress !== undefined && a.target && (
-                    <div className="mt-2">
-                      <Progress value={(a.progress / a.target) * 100} className="h-1" />
-                      <div className="text-[10px] text-muted-foreground mt-1">
-                        {a.progress.toLocaleString()} / {a.target.toLocaleString()}
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </div>
-        </ScrollArea>
       </DialogContent>
     </Dialog>
   );
@@ -7953,7 +7897,6 @@ export default function Game() {
           
           {/* Panels - render as fullscreen modals on mobile */}
           {state.activePanel === 'budget' && <BudgetPanel />}
-          {state.activePanel === 'achievements' && <AchievementsPanel />}
           {state.activePanel === 'statistics' && <StatisticsPanel />}
           {state.activePanel === 'advisors' && <AdvisorsPanel />}
           {state.activePanel === 'settings' && <SettingsPanel />}
@@ -7988,7 +7931,6 @@ export default function Game() {
         </div>
         
         {state.activePanel === 'budget' && <BudgetPanel />}
-        {state.activePanel === 'achievements' && <AchievementsPanel />}
         {state.activePanel === 'statistics' && <StatisticsPanel />}
         {state.activePanel === 'advisors' && <AdvisorsPanel />}
         {state.activePanel === 'settings' && <SettingsPanel />}
