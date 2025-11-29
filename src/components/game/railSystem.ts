@@ -407,42 +407,62 @@ function drawBallast(
     case 'curve_sw':
       drawDoubleCurvedBallast(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
       // T-junction with no north: has east, south, west
       // Main line (E-W) stays straight
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
-      // Curved connections from south stem to both ends of the main line
-      drawDoubleCurvedBallast(southEdge, eastEdge, center, ISO_EW, NEG_ISO_NS, { x: -1, y: 0 });
-      drawDoubleCurvedBallast(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
+      // Single curved tracks from south stem to outer tracks of the main line
+      const tn_stemOuter1 = offsetPoint(southEdge, ISO_EW, halfSep);
+      const tn_stemOuter2 = offsetPoint(southEdge, ISO_EW, -halfSep);
+      const tn_eastOuter = offsetPoint(eastEdge, ISO_NS, -halfSep);
+      const tn_westOuter = offsetPoint(westEdge, ISO_NS, halfSep);
+      drawSingleCurvedBallast(tn_stemOuter1, tn_eastOuter, center, ISO_EW, NEG_ISO_NS);
+      drawSingleCurvedBallast(tn_stemOuter2, tn_westOuter, center, NEG_ISO_EW, NEG_ISO_NS);
       drawCenterBallast();
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
       // T-junction with no east: has north, south, west
       // Main line (N-S) stays straight
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
-      // Curved connections from west stem to both ends of the main line
-      drawDoubleCurvedBallast(westEdge, northEdge, center, NEG_ISO_EW, ISO_NS, { x: 1, y: 0 });
-      drawDoubleCurvedBallast(westEdge, southEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
+      // Single curved tracks from west stem to outer tracks of the main line
+      const te_stemOuter1 = offsetPoint(westEdge, ISO_NS, halfSep);
+      const te_stemOuter2 = offsetPoint(westEdge, ISO_NS, -halfSep);
+      const te_northOuter = offsetPoint(northEdge, ISO_EW, halfSep);
+      const te_southOuter = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurvedBallast(te_stemOuter1, te_northOuter, center, NEG_ISO_EW, ISO_NS);
+      drawSingleCurvedBallast(te_stemOuter2, te_southOuter, center, NEG_ISO_EW, NEG_ISO_NS);
       drawCenterBallast();
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
       // T-junction with no south: has north, east, west
       // Main line (E-W) stays straight
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
-      // Curved connections from north stem to both ends of the main line
-      drawDoubleCurvedBallast(northEdge, eastEdge, center, ISO_EW, ISO_NS, { x: 0, y: 1 });
-      drawDoubleCurvedBallast(northEdge, westEdge, center, NEG_ISO_EW, ISO_NS, { x: 1, y: 0 });
+      // Single curved tracks from north stem to outer tracks of the main line
+      const ts_stemOuter1 = offsetPoint(northEdge, ISO_EW, halfSep);
+      const ts_stemOuter2 = offsetPoint(northEdge, ISO_EW, -halfSep);
+      const ts_eastOuter = offsetPoint(eastEdge, ISO_NS, halfSep);
+      const ts_westOuter = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurvedBallast(ts_stemOuter1, ts_eastOuter, center, ISO_EW, ISO_NS);
+      drawSingleCurvedBallast(ts_stemOuter2, ts_westOuter, center, NEG_ISO_EW, ISO_NS);
       drawCenterBallast();
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
       // T-junction with no west: has north, east, south
       // Main line (N-S) stays straight
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
-      // Curved connections from east stem to both ends of the main line
-      drawDoubleCurvedBallast(eastEdge, northEdge, center, ISO_EW, ISO_NS, { x: 0, y: 1 });
-      drawDoubleCurvedBallast(eastEdge, southEdge, center, ISO_EW, NEG_ISO_NS, { x: -1, y: 0 });
+      // Single curved tracks from east stem to outer tracks of the main line
+      const tw_stemOuter1 = offsetPoint(eastEdge, ISO_NS, halfSep);
+      const tw_stemOuter2 = offsetPoint(eastEdge, ISO_NS, -halfSep);
+      const tw_northOuter = offsetPoint(northEdge, ISO_EW, -halfSep);
+      const tw_southOuter = offsetPoint(southEdge, ISO_EW, halfSep);
+      drawSingleCurvedBallast(tw_stemOuter1, tw_northOuter, center, ISO_EW, ISO_NS);
+      drawSingleCurvedBallast(tw_stemOuter2, tw_southOuter, center, ISO_EW, NEG_ISO_NS);
       drawCenterBallast();
       break;
+    }
     case 'junction_cross':
       drawDoubleStraightBallast(northEdge, southEdge, ISO_EW);
       drawDoubleStraightBallast(eastEdge, westEdge, ISO_NS);
@@ -631,38 +651,58 @@ function drawTies(
     case 'curve_sw':
       drawDoubleCurveTies(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 }, TIES_PER_TILE);
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
       // T-junction with no north: has east, south, west
       // Main line (E-W) straight ties
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
-      // Curved ties from south stem to both ends of the main line
-      drawDoubleCurveTies(southEdge, eastEdge, center, ISO_EW, NEG_ISO_NS, ISO_EW, NEG_ISO_NS, { x: -1, y: 0 }, TIES_PER_TILE);
-      drawDoubleCurveTies(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 }, TIES_PER_TILE);
+      // Single curved ties from south stem to outer tracks of the main line
+      const tn_stemOuter1 = offsetPoint(southEdge, ISO_EW, halfSep);
+      const tn_stemOuter2 = offsetPoint(southEdge, ISO_EW, -halfSep);
+      const tn_eastOuter = offsetPoint(eastEdge, ISO_NS, -halfSep);
+      const tn_westOuter = offsetPoint(westEdge, ISO_NS, halfSep);
+      drawSingleCurveTies(tn_stemOuter1, tn_eastOuter, center, ISO_EW, NEG_ISO_NS, TIES_PER_TILE);
+      drawSingleCurveTies(tn_stemOuter2, tn_westOuter, center, NEG_ISO_EW, NEG_ISO_NS, TIES_PER_TILE);
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
       // T-junction with no east: has north, south, west
       // Main line (N-S) straight ties
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
-      // Curved ties from west stem to both ends of the main line
-      drawDoubleCurveTies(westEdge, northEdge, center, NEG_ISO_EW, ISO_NS, NEG_ISO_EW, ISO_NS, { x: 1, y: 0 }, TIES_PER_TILE);
-      drawDoubleCurveTies(westEdge, southEdge, center, NEG_ISO_EW, NEG_ISO_NS, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 }, TIES_PER_TILE);
+      // Single curved ties from west stem to outer tracks of the main line
+      const te_stemOuter1 = offsetPoint(westEdge, ISO_NS, halfSep);
+      const te_stemOuter2 = offsetPoint(westEdge, ISO_NS, -halfSep);
+      const te_northOuter = offsetPoint(northEdge, ISO_EW, halfSep);
+      const te_southOuter = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurveTies(te_stemOuter1, te_northOuter, center, NEG_ISO_EW, ISO_NS, TIES_PER_TILE);
+      drawSingleCurveTies(te_stemOuter2, te_southOuter, center, NEG_ISO_EW, NEG_ISO_NS, TIES_PER_TILE);
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
       // T-junction with no south: has north, east, west
       // Main line (E-W) straight ties
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
-      // Curved ties from north stem to both ends of the main line
-      drawDoubleCurveTies(northEdge, eastEdge, center, ISO_EW, ISO_NS, ISO_EW, ISO_NS, { x: 0, y: 1 }, TIES_PER_TILE);
-      drawDoubleCurveTies(northEdge, westEdge, center, NEG_ISO_EW, ISO_NS, NEG_ISO_EW, ISO_NS, { x: 1, y: 0 }, TIES_PER_TILE);
+      // Single curved ties from north stem to outer tracks of the main line
+      const ts_stemOuter1 = offsetPoint(northEdge, ISO_EW, halfSep);
+      const ts_stemOuter2 = offsetPoint(northEdge, ISO_EW, -halfSep);
+      const ts_eastOuter = offsetPoint(eastEdge, ISO_NS, halfSep);
+      const ts_westOuter = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurveTies(ts_stemOuter1, ts_eastOuter, center, ISO_EW, ISO_NS, TIES_PER_TILE);
+      drawSingleCurveTies(ts_stemOuter2, ts_westOuter, center, NEG_ISO_EW, ISO_NS, TIES_PER_TILE);
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
       // T-junction with no west: has north, east, south
       // Main line (N-S) straight ties
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
-      // Curved ties from east stem to both ends of the main line
-      drawDoubleCurveTies(eastEdge, northEdge, center, ISO_EW, ISO_NS, ISO_EW, ISO_NS, { x: 0, y: 1 }, TIES_PER_TILE);
-      drawDoubleCurveTies(eastEdge, southEdge, center, ISO_EW, NEG_ISO_NS, ISO_EW, NEG_ISO_NS, { x: -1, y: 0 }, TIES_PER_TILE);
+      // Single curved ties from east stem to outer tracks of the main line
+      const tw_stemOuter1 = offsetPoint(eastEdge, ISO_NS, halfSep);
+      const tw_stemOuter2 = offsetPoint(eastEdge, ISO_NS, -halfSep);
+      const tw_northOuter = offsetPoint(northEdge, ISO_EW, -halfSep);
+      const tw_southOuter = offsetPoint(southEdge, ISO_EW, halfSep);
+      drawSingleCurveTies(tw_stemOuter1, tw_northOuter, center, ISO_EW, ISO_NS, TIES_PER_TILE);
+      drawSingleCurveTies(tw_stemOuter2, tw_southOuter, center, ISO_EW, NEG_ISO_NS, TIES_PER_TILE);
       break;
+    }
     case 'junction_cross':
       drawDoubleTies(northEdge, southEdge, ISO_EW, ISO_EW, TIES_PER_TILE);
       drawDoubleTies(eastEdge, westEdge, ISO_NS, ISO_NS, TIES_PER_TILE);
@@ -868,38 +908,58 @@ function drawRails(
     case 'curve_sw':
       drawDoubleCurvedRails(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
       break;
-    case 'junction_t_n':
+    case 'junction_t_n': {
       // T-junction with no north: has east, south, west
       // Main line (E-W) straight rails
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
-      // Curved rails from south stem to both ends of the main line
-      drawDoubleCurvedRails(southEdge, eastEdge, center, ISO_EW, NEG_ISO_NS, { x: -1, y: 0 });
-      drawDoubleCurvedRails(southEdge, westEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
+      // Single curved rails from south stem to outer tracks of the main line
+      const tn_stemOuter1 = offsetPoint(southEdge, ISO_EW, halfSep);
+      const tn_stemOuter2 = offsetPoint(southEdge, ISO_EW, -halfSep);
+      const tn_eastOuter = offsetPoint(eastEdge, ISO_NS, -halfSep);
+      const tn_westOuter = offsetPoint(westEdge, ISO_NS, halfSep);
+      drawSingleCurvedRails(tn_stemOuter1, tn_eastOuter, center, ISO_EW, NEG_ISO_NS);
+      drawSingleCurvedRails(tn_stemOuter2, tn_westOuter, center, NEG_ISO_EW, NEG_ISO_NS);
       break;
-    case 'junction_t_e':
+    }
+    case 'junction_t_e': {
       // T-junction with no east: has north, south, west
       // Main line (N-S) straight rails
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
-      // Curved rails from west stem to both ends of the main line
-      drawDoubleCurvedRails(westEdge, northEdge, center, NEG_ISO_EW, ISO_NS, { x: 1, y: 0 });
-      drawDoubleCurvedRails(westEdge, southEdge, center, NEG_ISO_EW, NEG_ISO_NS, { x: 0, y: -1 });
+      // Single curved rails from west stem to outer tracks of the main line
+      const te_stemOuter1 = offsetPoint(westEdge, ISO_NS, halfSep);
+      const te_stemOuter2 = offsetPoint(westEdge, ISO_NS, -halfSep);
+      const te_northOuter = offsetPoint(northEdge, ISO_EW, halfSep);
+      const te_southOuter = offsetPoint(southEdge, ISO_EW, -halfSep);
+      drawSingleCurvedRails(te_stemOuter1, te_northOuter, center, NEG_ISO_EW, ISO_NS);
+      drawSingleCurvedRails(te_stemOuter2, te_southOuter, center, NEG_ISO_EW, NEG_ISO_NS);
       break;
-    case 'junction_t_s':
+    }
+    case 'junction_t_s': {
       // T-junction with no south: has north, east, west
       // Main line (E-W) straight rails
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
-      // Curved rails from north stem to both ends of the main line
-      drawDoubleCurvedRails(northEdge, eastEdge, center, ISO_EW, ISO_NS, { x: 0, y: 1 });
-      drawDoubleCurvedRails(northEdge, westEdge, center, NEG_ISO_EW, ISO_NS, { x: 1, y: 0 });
+      // Single curved rails from north stem to outer tracks of the main line
+      const ts_stemOuter1 = offsetPoint(northEdge, ISO_EW, halfSep);
+      const ts_stemOuter2 = offsetPoint(northEdge, ISO_EW, -halfSep);
+      const ts_eastOuter = offsetPoint(eastEdge, ISO_NS, halfSep);
+      const ts_westOuter = offsetPoint(westEdge, ISO_NS, -halfSep);
+      drawSingleCurvedRails(ts_stemOuter1, ts_eastOuter, center, ISO_EW, ISO_NS);
+      drawSingleCurvedRails(ts_stemOuter2, ts_westOuter, center, NEG_ISO_EW, ISO_NS);
       break;
-    case 'junction_t_w':
+    }
+    case 'junction_t_w': {
       // T-junction with no west: has north, east, south
       // Main line (N-S) straight rails
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
-      // Curved rails from east stem to both ends of the main line
-      drawDoubleCurvedRails(eastEdge, northEdge, center, ISO_EW, ISO_NS, { x: 0, y: 1 });
-      drawDoubleCurvedRails(eastEdge, southEdge, center, ISO_EW, NEG_ISO_NS, { x: -1, y: 0 });
+      // Single curved rails from east stem to outer tracks of the main line
+      const tw_stemOuter1 = offsetPoint(eastEdge, ISO_NS, halfSep);
+      const tw_stemOuter2 = offsetPoint(eastEdge, ISO_NS, -halfSep);
+      const tw_northOuter = offsetPoint(northEdge, ISO_EW, -halfSep);
+      const tw_southOuter = offsetPoint(southEdge, ISO_EW, halfSep);
+      drawSingleCurvedRails(tw_stemOuter1, tw_northOuter, center, ISO_EW, ISO_NS);
+      drawSingleCurvedRails(tw_stemOuter2, tw_southOuter, center, ISO_EW, NEG_ISO_NS);
       break;
+    }
     case 'junction_cross':
       drawDoubleStraightRails(northEdge, southEdge, ISO_EW);
       drawDoubleStraightRails(eastEdge, westEdge, ISO_NS);
