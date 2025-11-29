@@ -133,6 +133,20 @@ import {
   TRAFFIC_LIGHT_TIMING,
 } from '@/components/game/trafficSystem';
 import { CrimeType, getCrimeName, getCrimeDescription, getFireDescriptionForTile, getFireNameForTile } from '@/components/game/incidentData';
+import {
+  getAdjacentRails,
+  drawRailTracks,
+  isRail,
+} from '@/components/game/railSystem';
+import {
+  Train,
+  findRailStations,
+  spawnTrain,
+  updateTrain,
+  drawTrains,
+  countRailTiles,
+  TRAIN_CONFIG,
+} from '@/components/game/trainSystem';
 
 // Props interface for CanvasIsometricGrid
 export interface CanvasIsometricGridProps {
@@ -222,6 +236,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   // Factory smog system refs
   const factorySmogRef = useRef<FactorySmog[]>([]);
   const smogLastGridVersionRef = useRef(-1); // Track when to rebuild factory list
+
+  // Train system refs
+  const trainsRef = useRef<Train[]>([]);
+  const trainIdRef = useRef(0);
+  const trainSpawnTimerRef = useRef(0);
 
   // Traffic light system timer (cumulative time for cycling through states)
   const trafficLightTimerRef = useRef(0);
@@ -397,6 +416,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     // Clear factory smog
     factorySmogRef.current = [];
     smogLastGridVersionRef.current = -1;
+    
+    // Clear trains
+    trainsRef.current = [];
+    trainIdRef.current = 0;
+    trainSpawnTimerRef.current = 0;
     
     // Reset traffic light timer
     trafficLightTimerRef.current = 0;
@@ -1535,7 +1559,63 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     ctx.restore();
   }, []);
 
+  // Update trains - spawn, move, and manage lifecycle
+  const updateTrainsCallback = useCallback((delta: number) => {
+    const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed } = worldStateRef.current;
+    
+    if (!currentGrid || currentGridSize <= 0 || currentSpeed === 0) {
+      return;
+    }
+    
+    // Check if there are enough rail tiles for trains
+    const railTileCount = countRailTiles(currentGrid, currentGridSize);
+    if (railTileCount < TRAIN_CONFIG.MIN_RAIL_TILES) {
+      trainsRef.current = [];
+      return;
+    }
+    
+    // Speed multiplier based on game speed
+    const speedMultiplier = currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2 : 3;
+    
+    // Spawn timer
+    trainSpawnTimerRef.current -= delta;
+    if (trainSpawnTimerRef.current <= 0 && trainsRef.current.length < TRAIN_CONFIG.MAX_TRAINS) {
+      // Find rail stations
+      const stations = findRailStations(currentGrid, currentGridSize);
+      
+      if (stations.length > 0 || countRailTiles(currentGrid, currentGridSize) >= TRAIN_CONFIG.MIN_RAIL_TILES) {
+        const newTrain = spawnTrain(currentGrid, currentGridSize, trainIdRef.current++, trainsRef.current);
+        if (newTrain) {
+          trainsRef.current.push(newTrain);
+        }
+      }
+      
+      trainSpawnTimerRef.current = TRAIN_CONFIG.SPAWN_INTERVAL + Math.random() * 5;
+    }
+    
+    // Update existing trains
+    trainsRef.current = trainsRef.current.filter(train => {
+      return updateTrain(train, delta, speedMultiplier, currentGrid, currentGridSize);
+    });
+  }, []);
 
+  // Draw trains on the canvas
+  const drawTrainsCallback = useCallback((ctx: CanvasRenderingContext2D) => {
+    const { offset: currentOffset, zoom: currentZoom, grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    
+    if (!currentGrid || currentGridSize <= 0 || trainsRef.current.length === 0) {
+      return;
+    }
+    
+    ctx.save();
+    ctx.scale(dpr, dpr);
+    
+    // Draw all trains with proper offset
+    drawTrains(ctx, trainsRef.current, currentOffset.x, currentOffset.y, currentZoom, currentGridSize);
+    
+    ctx.restore();
+  }, []);
 
   // Progressive image loading - load sprites in background, render immediately
   // Subscribe to image load notifications to trigger re-renders as assets become available
@@ -1696,6 +1776,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     const buildingQueue: BuildingDraw[] = [];
     const waterQueue: BuildingDraw[] = [];
     const roadQueue: BuildingDraw[] = []; // Roads drawn above water
+    const railQueue: BuildingDraw[] = []; // Rail tracks drawn above roads
     const beachQueue: BuildingDraw[] = [];
     const baseTileQueue: BuildingDraw[] = [];
     const greenBaseTileQueue: BuildingDraw[] = [];
@@ -3241,6 +3322,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           const depth = x + y;
           roadQueue.push({ screenX, screenY, tile, depth });
         }
+        // Rail tracks go to their own queue (drawn above roads)
+        else if (tile.building.type === 'rail') {
+          const depth = x + y;
+          railQueue.push({ screenX, screenY, tile, depth });
+        }
         // Check for beach tiles (grass/empty tiles adjacent to water) - use pre-computed metadata
         else if ((tile.building.type === 'grass' || tile.building.type === 'empty') &&
                  (tileMetadata?.isAdjacentToWater ?? false)) {
@@ -3338,6 +3424,28 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         
         // Draw road markings and sidewalks
         drawBuilding(ctx, screenX, screenY, tile);
+      });
+    
+    // Draw rail tracks (above roads)
+    insertionSortByDepth(railQueue);
+    railQueue.forEach(({ tile, screenX, screenY }) => {
+        // Draw ballast/gravel base first
+        const w = TILE_WIDTH;
+        const h = TILE_HEIGHT;
+        ctx.fillStyle = '#5c5c5c';
+        ctx.beginPath();
+        ctx.moveTo(screenX + w / 2, screenY);
+        ctx.lineTo(screenX + w, screenY + h / 2);
+        ctx.lineTo(screenX + w / 2, screenY + h);
+        ctx.lineTo(screenX, screenY + h / 2);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Get adjacent rail connections
+        const adjRails = getAdjacentRails(grid, gridSize, tile.x, tile.y);
+        
+        // Draw rail tracks
+        drawRailTracks(ctx, screenX, screenY, adjRails, zoom);
       });
     
     // Draw green base tiles for grass/empty tiles adjacent to water (after water, before gray bases)
@@ -3531,6 +3639,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       if (delta > 0) {
         updateCars(delta);
+        updateTrainsCallback(delta); // Update trains on rail network
         spawnCrimeIncidents(delta); // Spawn new crime incidents
         updateCrimeIncidents(delta); // Update/decay crime incidents
         updateEmergencyVehicles(delta); // Update emergency vehicles!
@@ -3551,6 +3660,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       } else {
         drawCars(ctx);
+        drawTrainsCallback(ctx); // Draw trains on rail tracks
         drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
         drawBoats(ctx); // Draw boats on water
         drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
@@ -3564,7 +3674,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
+  }, [canvasSize.width, canvasSize.height, updateCars, drawCars, updateTrainsCallback, drawTrainsCallback, spawnCrimeIncidents, updateCrimeIncidents, updateEmergencyVehicles, drawEmergencyVehicles, updatePedestrians, drawPedestrians, updateAirplanes, drawAirplanes, updateHelicopters, drawHelicopters, updateBoats, drawBoats, drawIncidentIndicators, updateFireworks, drawFireworks, updateSmog, drawSmog, visualHour, isMobile]);
   
   // Day/Night cycle lighting rendering - optimized for performance
   useEffect(() => {

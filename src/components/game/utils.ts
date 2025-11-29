@@ -13,6 +13,23 @@ export function isRoadTile(gridData: Tile[][], gridSizeValue: number, x: number,
   return gridData[y][x].building.type === 'road';
 }
 
+// Check if a tile is a rail track
+export function isRailTile(gridData: Tile[][], gridSizeValue: number, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= gridSizeValue || y >= gridSizeValue) return false;
+  return gridData[y][x].building.type === 'rail';
+}
+
+// Check if a tile is a rail station
+export function isRailStationTile(gridData: Tile[][], gridSizeValue: number, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= gridSizeValue || y >= gridSizeValue) return false;
+  return gridData[y][x].building.type === 'rail_station';
+}
+
+// Check if a tile can connect to rail (rail or rail_station)
+export function canConnectRail(gridData: Tile[][], gridSizeValue: number, x: number, y: number): boolean {
+  return isRailTile(gridData, gridSizeValue, x, y) || isRailStationTile(gridData, gridSizeValue, x, y);
+}
+
 // Get available direction options from a tile
 export function getDirectionOptions(gridData: Tile[][], gridSizeValue: number, x: number, y: number): CarDirection[] {
   const options: CarDirection[] = [];
