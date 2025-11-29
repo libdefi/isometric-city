@@ -30,6 +30,10 @@ export const PEDESTRIAN_SPAWN_BATCH_SIZE = 25;      // How many to try spawning 
 export const PEDESTRIAN_SPAWN_INTERVAL = 0.03;      // Seconds between spawn batches
 export const PEDESTRIAN_UPDATE_SKIP_DISTANCE = 30;  // Skip detailed updates for pedestrians this far from view
 
+// Zoom limits for camera
+export const ZOOM_MIN = 0.2;                      // Minimum zoom level (most zoomed out)
+export const ZOOM_MAX = 7;                        // Maximum zoom level (most zoomed in)
+
 // Zoom thresholds for rendering detail elements
 // Lower values = more zoomed out, higher values = more zoomed in required
 export const CAR_MIN_ZOOM = 0.4;                  // Desktop car threshold (cars hidden when very zoomed out)

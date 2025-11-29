@@ -37,6 +37,8 @@ import {
   SIDEWALK_MIN_ZOOM,
   SIDEWALK_MIN_ZOOM_MOBILE,
   SKIP_SMALL_ELEMENTS_ZOOM_THRESHOLD,
+  ZOOM_MIN,
+  ZOOM_MAX,
 } from '@/components/game/constants';
 import {
   gridToScreen,
@@ -3415,7 +3417,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     
     // Calculate new zoom
     const zoomDelta = e.deltaY > 0 ? -0.05 : 0.05;
-    const newZoom = Math.max(0.2, Math.min(7, zoom + zoomDelta));
+    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + zoomDelta));
     
     if (newZoom === zoom) return;
     
@@ -3484,7 +3486,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       // Pinch to zoom
       const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
       const scale = currentDistance / initialPinchDistanceRef.current;
-      const newZoom = Math.max(0.2, Math.min(7, initialZoomRef.current * scale));
+      const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, initialZoomRef.current * scale));
 
       const currentCenter = getTouchCenter(e.touches[0], e.touches[1]);
       const rect = containerRef.current?.getBoundingClientRect();
