@@ -82,6 +82,7 @@ export function MobileTopBar({
   const { stats, year, month, speed, taxRate, cityName } = state;
   const [showDetails, setShowDetails] = useState(false);
   const [shareState, setShareState] = useState<'idle' | 'copied'>('idle');
+  const [showTaxSlider, setShowTaxSlider] = useState(false);
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -136,44 +137,44 @@ export function MobileTopBar({
           </div>
 
           {/* Speed controls: Pause / Play / 2x / 3x */}
-          <div className="flex items-center gap-0.5 bg-secondary rounded p-0.5">
+          <div className="flex items-center bg-secondary rounded p-0.5">
             <Button
               onClick={() => setSpeed(0)}
               variant={speed === 0 ? 'default' : 'ghost'}
               size="icon"
-              className="h-6 w-6"
+              className="h-5 w-5"
               title="Pause"
             >
-              <PauseIcon size={10} />
+              <PauseIcon size={8} />
             </Button>
             <Button
               onClick={() => setSpeed(1)}
               variant={speed === 1 ? 'default' : 'ghost'}
               size="icon"
-              className="h-6 w-6"
+              className="h-5 w-5"
               title="Normal speed"
             >
-              <PlayIcon size={10} />
+              <PlayIcon size={8} />
             </Button>
             <Button
               onClick={() => setSpeed(2)}
               variant={speed === 2 ? 'default' : 'ghost'}
               size="icon"
-              className="h-6 w-6"
+              className="h-5 w-5"
               title="2x speed"
             >
-              <FastForwardIcon size={10} />
+              <FastForwardIcon size={8} />
             </Button>
             <Button
               onClick={() => setSpeed(3)}
               variant={speed === 3 ? 'default' : 'ghost'}
               size="icon"
-              className="h-6 w-6"
+              className="h-5 w-5"
               title="3x speed"
             >
-              <div className="flex items-center -space-x-1">
-                <PlayIcon size={6} />
-                <PlayIcon size={6} />
+              <div className="flex items-center -space-x-0.5">
+                <PlayIcon size={5} />
+                <PlayIcon size={5} />
               </div>
             </Button>
           </div>
@@ -201,10 +202,18 @@ export function MobileTopBar({
             <DemandBar label="I" demand={stats.demand.industrial} color="text-amber-500" />
           </div>
 
-          <div className="flex items-center gap-1">
+          <button 
+            className="flex items-center gap-1 active:opacity-70 px-1.5 py-0.5 -mx-1.5 -my-0.5 rounded hover:bg-secondary/50"
+            onClick={() => {
+              if (selectedTile) {
+                onCloseTile();
+              }
+              setShowTaxSlider(!showTaxSlider);
+            }}
+          >
             <span className="text-[9px] text-muted-foreground">Tax</span>
-            <span className="text-[10px] font-mono text-foreground">{taxRate}%</span>
-          </div>
+            <span className={`text-[10px] font-mono ${showTaxSlider ? 'text-primary' : 'text-foreground'}`}>{taxRate}%</span>
+          </button>
 
           <div className="flex items-center gap-1">
             <span className={`text-[10px] font-mono ${stats.income - stats.expenses >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -212,6 +221,47 @@ export function MobileTopBar({
             </span>
           </div>
         </div>
+
+        {/* Tax Slider Row - Mobile Only */}
+        {showTaxSlider && !selectedTile && (
+          <div className="border-t border-sidebar-border/50 bg-gradient-to-b from-secondary/60 to-secondary/20 px-3 py-2">
+            {/* Header row */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <MoneyIcon size={12} className="text-muted-foreground" />
+                <span className="text-xs font-medium text-foreground">
+                  Tax Rate
+                </span>
+                <span className="text-xs font-mono text-primary font-semibold">
+                  {taxRate}%
+                </span>
+              </div>
+              <button 
+                onClick={() => setShowTaxSlider(false)} 
+                className="text-muted-foreground hover:text-foreground transition-colors p-1 -m-1"
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+            
+            {/* Slider */}
+            <div className="flex items-center gap-3">
+              <Slider
+                value={[taxRate]}
+                onValueChange={(value) => setTaxRate(value[0])}
+                min={0}
+                max={20}
+                step={1}
+                className="flex-1"
+              />
+              <div className="flex flex-col items-end text-[10px]">
+                <span className={`font-mono ${stats.income - stats.expenses >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {stats.income - stats.expenses >= 0 ? '+' : ''}${(stats.income - stats.expenses).toLocaleString()}/mo
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tile Info Row - Mobile Only */}
         {selectedTile && (
