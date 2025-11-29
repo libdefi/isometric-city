@@ -233,6 +233,15 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   const trainsRef = useRef<Train[]>([]);
   const trainIdRef = useRef(0);
   const trainSpawnTimerRef = useRef(0);
+  
+  // Store tall buildings that should render on top of cars/trains
+  type TallBuildingDraw = {
+    screenX: number;
+    screenY: number;
+    tile: Tile;
+    depth: number;
+  };
+  const tallBuildingsRef = useRef<TallBuildingDraw[]>([]);
 
   // Navigation light flash timer for planes/helicopters/boats at night
   const navLightFlashTimerRef = useRef(0);
@@ -1096,6 +1105,9 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
 
     drawTrains(ctx, trainsRef.current, currentOffset, currentZoom, size, currentGrid, currentGridSize);
   }, []);
+  
+  // Draw tall buildings callback - will be set by main render function
+  const drawTallBuildingsCallbackRef = useRef<((ctx: CanvasRenderingContext2D) => void) | null>(null);
 
   // Find firework buildings (uses imported utility)
   const findFireworkBuildingsCallback = useCallback((): { x: number; y: number; type: BuildingType }[] => {
@@ -1781,6 +1793,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     // PERF: Reuse queue arrays across frames to avoid GC pressure
     // Arrays are cleared by setting length = 0 which is faster than recreating
     const buildingQueue: BuildingDraw[] = [];
+    const tallBuildingQueue: BuildingDraw[] = []; // Tall buildings that render on top of cars/trains
     const waterQueue: BuildingDraw[] = [];
     const roadQueue: BuildingDraw[] = []; // Roads drawn above water
     const railQueue: BuildingDraw[] = []; // Rail tracks drawn above water
@@ -1788,6 +1801,25 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     const baseTileQueue: BuildingDraw[] = [];
     const greenBaseTileQueue: BuildingDraw[] = [];
     const overlayQueue: OverlayDraw[] = [];
+    
+    // Helper function to check if a building is tall (should render on top of cars/trains)
+    function isTallBuilding(buildingType: BuildingType): boolean {
+      // Tall buildings are those that extend significantly upward (skyscrapers, high-rises)
+      const tallBuildingTypes: Set<BuildingType> = new Set([
+        'apartment_high',
+        'office_high',
+        'mall',
+        'hospital',
+        'university',
+        'stadium',
+        'museum',
+        'airport',
+        'city_hall',
+        'amusement_park',
+        'space_program',
+      ]);
+      return tallBuildingTypes.has(buildingType);
+    }
     
     // PERF: Insertion sort for nearly-sorted arrays (O(n) vs O(n log n) for .sort())
     // Since tiles are iterated in diagonal order, queues are already nearly sorted
@@ -3396,13 +3428,18 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                  (tileMetadata?.isAdjacentToWater ?? false)) {
           beachQueue.push({ screenX, screenY, tile, depth: x + y });
         }
-        // Other buildings go to regular building queue
+        // Other buildings go to regular building queue or tall building queue
         else {
           const isBuilding = tile.building.type !== 'grass' && tile.building.type !== 'empty';
           if (isBuilding) {
             const size = getBuildingSize(tile.building.type);
             const depth = x + y + size.width + size.height - 2;
-            buildingQueue.push({ screenX, screenY, tile, depth });
+            // Separate tall buildings that should render on top of cars/trains
+            if (isTallBuilding(tile.building.type)) {
+              tallBuildingQueue.push({ screenX, screenY, tile, depth });
+            } else {
+              buildingQueue.push({ screenX, screenY, tile, depth });
+            }
           }
         }
         
@@ -3544,6 +3581,27 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     buildingQueue.forEach(({ tile, screenX, screenY }) => {
       drawBuilding(ctx, screenX, screenY, tile);
     });
+    
+    // Store tall buildings for rendering on cars canvas (after cars/trains)
+    insertionSortByDepth(tallBuildingQueue);
+    tallBuildingsRef.current = tallBuildingQueue;
+    
+    // Create callback function to draw tall buildings (captures current context)
+    drawTallBuildingsCallbackRef.current = (ctx: CanvasRenderingContext2D) => {
+      if (tallBuildingQueue.length === 0) return;
+      
+      const dpr = window.devicePixelRatio || 1;
+      ctx.save();
+      ctx.scale(dpr * zoom, dpr * zoom);
+      ctx.translate(offset.x / zoom, offset.y / zoom);
+      
+      // Draw tall buildings sorted by depth
+      tallBuildingQueue.forEach(({ tile, screenX, screenY }) => {
+        drawBuilding(ctx, screenX, screenY, tile);
+      });
+      
+      ctx.restore();
+    };
     
     // Draw overlays last so they remain visible on top of buildings
     overlayQueue.forEach(({ tile, screenX, screenY }) => {
@@ -3738,6 +3796,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         drawPedestrians(ctx); // Draw pedestrians (zoom-gated)
         drawBoats(ctx); // Draw boats on water
         drawTrainsCallback(ctx); // Draw trains on rail network
+        
+        // Draw tall buildings on top of cars/trains (skyscrapers, high-rises)
+        if (drawTallBuildingsCallbackRef.current) {
+          drawTallBuildingsCallbackRef.current(ctx);
+        }
+        
         drawSmog(ctx); // Draw factory smog (above ground, below aircraft)
         drawEmergencyVehicles(ctx); // Draw emergency vehicles!
         drawIncidentIndicators(ctx, delta); // Draw fire/crime incident indicators!
