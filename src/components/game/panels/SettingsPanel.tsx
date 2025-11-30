@@ -351,7 +351,7 @@ export function SettingsPanel() {
                 ))}
               </div>
             ) : (
-              <p className="text-muted-foreground text-xs text-center py-4 border border-dashed rounded-md">
+              <p className="text-muted-foreground text-xs text-center py-3 border border-dashed rounded-md">
                 No saved cities yet.
               </p>
             )}

@@ -89,6 +89,7 @@ export function MobileTopBar({
   const { stats, year, month, speed, taxRate, cityName } = state;
   const [showDetails, setShowDetails] = useState(false);
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const [showTaxSlider, setShowTaxSlider] = useState(false);
 
   const handleSaveAndExit = useCallback(() => {
     saveCity();
@@ -107,27 +108,25 @@ export function MobileTopBar({
     <>
       {/* Main Top Bar */}
       <Card className="fixed top-0 left-0 right-0 z-40 rounded-none border-x-0 border-t-0 bg-card/95 backdrop-blur-sm safe-area-top">
-        <div className="flex items-start justify-between px-3 py-1.5">
-          {/* Left: City name and date */}
+        <div className="flex items-center justify-between px-3 py-1.5">
+          {/* Left: City name, date, Pop/Funds stats */}
           <button
-            className="flex flex-col items-start min-w-0 active:opacity-70 p-0 m-0"
+            className="flex items-center gap-3 min-w-0 active:opacity-70 p-0 m-0 mr-auto"
             onClick={() => setShowDetails(!showDetails)}
           >
-            <div className="flex items-center gap-1">
-              <span className="text-foreground font-semibold text-xs truncate max-w-[80px]">
-                {cityName}
+            <div className="flex flex-col items-start">
+              <div className="flex items-center gap-1">
+                <span className="text-foreground font-semibold text-xs truncate max-w-[80px]">
+                  {cityName}
+                </span>
+                {isSaving && (
+                  <span className="text-[8px] text-muted-foreground animate-pulse">•</span>
+                )}
+              </div>
+              <span className="text-muted-foreground text-[10px] font-mono">
+                {monthNames[month - 1]} {year}
               </span>
-              {isSaving && (
-                <span className="text-[8px] text-muted-foreground animate-pulse">•</span>
-              )}
             </div>
-            <div className="flex items-center gap-1 text-muted-foreground text-[10px] font-mono">
-              <span>{monthNames[month - 1]} {year}</span>
-            </div>
-          </button>
-
-          {/* Center: Pop/Funds stats */}
-          <div className="flex items-start gap-3 mr-auto ml-3">
             <div className="flex flex-col items-start">
               <span className="text-xs font-mono font-semibold text-foreground">
                 {stats.population >= 1000 ? `${(stats.population / 1000).toFixed(1)}k` : stats.population}
@@ -140,10 +139,10 @@ export function MobileTopBar({
               </span>
               <span className="text-[9px] text-muted-foreground">Funds</span>
             </div>
-          </div>
+          </button>
 
           {/* Speed controls and exit button */}
-          <div className="flex items-center gap-1 -mt-0.5">
+          <div className="flex items-center gap-1">
             <div className="flex items-center gap-0 bg-secondary rounded-sm h-6 overflow-hidden p-0 m-0">
               <button
                 onClick={() => setSpeed(0)}
@@ -215,10 +214,19 @@ export function MobileTopBar({
             <DemandBar label="I" demand={stats.demand.industrial} color="text-amber-500" />
           </div>
 
-          <div className="flex items-center gap-1">
+          <button
+            className="flex items-center gap-1 active:opacity-70"
+            onClick={() => {
+              const newShowTaxSlider = !showTaxSlider;
+              setShowTaxSlider(newShowTaxSlider);
+              if (newShowTaxSlider && selectedTile) {
+                onCloseTile();
+              }
+            }}
+          >
             <span className="text-[9px] text-muted-foreground">Tax</span>
             <span className="text-[10px] font-mono text-foreground">{taxRate}%</span>
-          </div>
+          </button>
 
           <div className="flex items-center gap-1">
             <span className={`text-[10px] font-mono ${stats.income - stats.expenses >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -227,12 +235,36 @@ export function MobileTopBar({
           </div>
         </div>
 
+        {/* Tax Slider Row */}
+        {showTaxSlider && !selectedTile && (
+          <div className="border-t border-sidebar-border/50 bg-secondary/30 px-3 py-0.5">
+            <div className="flex items-center gap-2 text-[10px]">
+              <span className="text-muted-foreground whitespace-nowrap">Tax Rate</span>
+              <Slider
+                value={[taxRate]}
+                onValueChange={(value) => setTaxRate(value[0])}
+                min={0}
+                max={100}
+                step={1}
+                className="flex-1"
+              />
+              <span className="font-mono text-foreground w-8 text-right">{taxRate}%</span>
+              <button 
+                onClick={() => setShowTaxSlider(false)} 
+                className="text-muted-foreground hover:text-foreground transition-colors ml-1"
+              >
+                <CloseIcon size={12} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Tile Info Row - Mobile Only */}
         {selectedTile && (
-          <div className="border-t border-sidebar-border/50 bg-gradient-to-b from-secondary/60 to-secondary/20 px-3 py-2">
-            {/* Header row */}
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
+          <div className="border-t border-sidebar-border/50 bg-gradient-to-b from-secondary/60 to-secondary/20 px-3 py-0.5">
+            <div className="flex items-center gap-2 text-[10px]">
+              {/* Name */}
+              <div className="flex items-center gap-1.5">
                 <div className={`w-2 h-2 rounded-full ${
                   selectedTile.zone === 'residential' ? 'bg-green-500' :
                   selectedTile.zone === 'commercial' ? 'bg-blue-500' :
@@ -243,45 +275,26 @@ export function MobileTopBar({
                     ? (selectedTile.zone === 'none' ? 'Empty Lot' : `${selectedTile.zone} Zone`)
                     : selectedTile.building.type.replace(/_/g, ' ')}
                 </span>
-                {selectedTile.building.level > 0 && (
-                  <span className="text-[10px] text-muted-foreground font-mono">
-                    Lv.{selectedTile.building.level}
-                  </span>
-                )}
               </div>
-              <button 
-                onClick={onCloseTile} 
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 -m-1"
-              >
-                <CloseIcon size={14} />
-              </button>
-            </div>
-            
-            {/* Stats row */}
-            <div className="flex items-center gap-4 text-[10px]">
+              
               {/* Population & Jobs */}
-              {(selectedTile.building.population > 0 || selectedTile.building.jobs > 0) && (
-                <div className="flex items-center gap-3">
-                  {selectedTile.building.population > 0 && (
-                    <div className="flex items-center gap-1">
-                      <PopulationIcon size={10} className="text-muted-foreground" />
-                      <span className="text-foreground font-mono">{selectedTile.building.population}</span>
-                    </div>
-                  )}
-                  {selectedTile.building.jobs > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground">💼</span>
-                      <span className="text-foreground font-mono">{selectedTile.building.jobs}</span>
-                    </div>
-                  )}
+              {selectedTile.building.population > 0 && (
+                <div className="flex items-center gap-1">
+                  <PopulationIcon size={10} className="text-muted-foreground" />
+                  <span className="text-foreground font-mono">{selectedTile.building.population}</span>
                 </div>
+              )}
+              {selectedTile.building.jobs > 0 && (
+                <span className="text-foreground font-mono">{selectedTile.building.jobs} jobs</span>
               )}
               
               {/* Utilities */}
-              <div className="flex items-center gap-1.5">
-                <span className={`text-xs ${selectedTile.building.powered ? 'text-yellow-400' : 'text-muted-foreground/40'}`}>⚡</span>
-                <span className={`text-xs ${selectedTile.building.watered ? 'text-cyan-400' : 'text-muted-foreground/40'}`}>💧</span>
-              </div>
+              <span className={selectedTile.building.powered ? 'text-yellow-400' : 'text-muted-foreground/60'}>
+                {selectedTile.building.powered ? 'Has power' : 'No power'}
+              </span>
+              <span className={selectedTile.building.watered ? 'text-cyan-400' : 'text-muted-foreground/60'}>
+                {selectedTile.building.watered ? 'Has water' : 'No water'}
+              </span>
               
               {/* Land value */}
               <div className="flex items-center gap-1 text-muted-foreground">
@@ -289,7 +302,7 @@ export function MobileTopBar({
                 <span className="font-mono text-foreground">{selectedTile.landValue}</span>
               </div>
               
-              {/* Pollution indicator */}
+              {/* Pollution */}
               {selectedTile.pollution > 0 && (
                 <div className="flex items-center gap-1">
                   <div className={`w-1.5 h-1.5 rounded-full ${
@@ -302,6 +315,14 @@ export function MobileTopBar({
                   }`}>{Math.round(selectedTile.pollution)}%</span>
                 </div>
               )}
+              
+              {/* Close button */}
+              <button 
+                onClick={onCloseTile} 
+                className="text-muted-foreground hover:text-foreground transition-colors ml-auto"
+              >
+                <CloseIcon size={12} />
+              </button>
             </div>
           </div>
         )}
