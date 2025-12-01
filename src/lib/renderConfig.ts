@@ -182,6 +182,26 @@ const SPRITE_PACK_RED: SpritePack = {
 };
 
 // ============================================================================
+// SPRITE PACK: RED (New Airport)
+// ============================================================================
+// This is a variant of the default 'red' pack that only overrides the airport
+// sprite to use a newer, improved version from a different sprite sheet.
+// ============================================================================
+const SPRITE_PACK_RED_AIRPORT: SpritePack = {
+  ...SPRITE_PACK_RED, // Inherit all properties from the base 'red' pack
+  id: 'red-airport',
+  name: 'Red Theme (New Airport)',
+  src: '/assets/sprites_red_water_new.png', // Use the new sprite sheet
+  // The airport sprite in the new sheet is larger and requires a different vertical offset
+  // to be positioned correctly. We'll use the value from the 'sprites4' pack, which
+  // is designed for this specific sprite sheet.
+  verticalOffsets: {
+    ...SPRITE_PACK_RED.verticalOffsets,
+    airport: -1.5,
+  },
+};
+
+// ============================================================================
 // SPRITE PACK: SPRITES4 (Alternative)
 // ============================================================================
 const SPRITE_PACK_SPRITES4: SpritePack = {
@@ -371,11 +391,12 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
 // ============================================================================
 export const SPRITE_PACKS: SpritePack[] = [
   SPRITE_PACK_RED,
+  SPRITE_PACK_RED_AIRPORT,
   SPRITE_PACK_SPRITES4,
 ];
 
 // Default sprite pack ID
-export const DEFAULT_SPRITE_PACK_ID = 'red';
+export const DEFAULT_SPRITE_PACK_ID = 'red-airport';
 
 // Get a sprite pack by ID
 export function getSpritePack(id: string): SpritePack {
@@ -445,6 +466,15 @@ export function getSpriteCoords(
   pack?: SpritePack
 ): { sx: number; sy: number; sw: number; sh: number } | null {
   const activePack = pack || _activeSpritePack;
+
+  // When using the 'red-airport' pack, all buildings *except* the airport should
+  // use the coordinates from the base 'red' pack. This is because 'red-airport'
+  // only replaces the airport sprite and its corresponding sprite sheet.
+  // We need to ensure all other buildings are still rendered from the original sheet.
+  if (activePack.id === 'red-airport' && buildingType !== 'airport') {
+    const redPack = getSpritePack('red');
+    return getSpriteCoords(buildingType, spriteSheetWidth, spriteSheetHeight, redPack);
+  }
   
   // First, map building type to sprite key
   const spriteKey = activePack.buildingToSprite[buildingType];
