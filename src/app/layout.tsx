@@ -31,9 +31,10 @@ export const metadata: Metadata = {
     images: [
       {
         url: '/og-image.png',
-        width: 1179,
-        height: 1406,
+        width: 1200,
+        height: 630,
         type: 'image/png',
+        alt: 'ISOCITY isometric city builder game screenshot',
       },
     ],
   },
@@ -44,8 +45,9 @@ export const metadata: Metadata = {
     images: [
       {
         url: '/og-image.png',
-        width: 1179,
-        height: 1406,
+        width: 1200,
+        height: 630,
+        alt: 'ISOCITY isometric city builder game screenshot',
       },
     ],
   },
