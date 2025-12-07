@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import path from 'path';
 
@@ -15,22 +15,13 @@ const GAME_IMAGES = [
   'IMG_6911.PNG',
 ];
 
-export async function GET(request: NextRequest) {
+// Use a static image for OG generation (first image in the list)
+const STATIC_OG_IMAGE = GAME_IMAGES[0];
+
+export async function GET() {
   try {
-    // Pick a random image (or use a query param for consistent previews)
-    const url = new URL(request.url);
-    const imageIndex = url.searchParams.get('i');
-    
-    let selectedImage: string;
-    if (imageIndex !== null && !isNaN(parseInt(imageIndex))) {
-      const idx = parseInt(imageIndex) % GAME_IMAGES.length;
-      selectedImage = GAME_IMAGES[idx];
-    } else {
-      selectedImage = GAME_IMAGES[Math.floor(Math.random() * GAME_IMAGES.length)];
-    }
-    
-    // Read the image file directly from the public folder
-    const imagePath = path.join(process.cwd(), 'public', 'games', selectedImage);
+    // Read the static image file directly from the public folder
+    const imagePath = path.join(process.cwd(), 'public', 'games', STATIC_OG_IMAGE);
     const imageBuffer = await readFile(imagePath);
     
     // Return the image directly with proper headers for social media crawlers
