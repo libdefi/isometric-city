@@ -1,0 +1,69 @@
+{
+  "name": "cursor-browser-devtools-extension",
+  "displayName": "Cursor Browser DevTools Extension",
+  "description": "Customize browser dev tools behavior for Cursor",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:cursor.switchToDebugChat",
+    "onCommand:cursor.browser.addElementToChat",
+    "onCommand:cursor.onBrowserInspectorOpen",
+    "onCommand:cursor.browser.onDevToolsStateChange"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursor.switchToDebugChat",
+        "title": "Switch Chat to Debug Mode"
+      },
+      {
+        "command": "cursor.browser.addElementToChat",
+        "title": "Add Element to Chat (Override)"
+      },
+      {
+        "command": "cursor.onBrowserInspectorOpen",
+        "title": "Browser Inspector Opened"
+      },
+      {
+        "command": "cursor.browser.onDevToolsStateChange",
+        "title": "Dev Tools State Changed"
+      }
+    ],
+    "configuration": {
+      "title": "Cursor Browser DevTools",
+      "properties": {
+        "cursor.debugChat.modelSlug": {
+          "type": "string",
+          "default": "",
+          "description": "Model slug to use for debug chat mode"
+        },
+        "cursor.browser.disableAutoHideSidebar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prevent sidebar from auto-hiding when browser dev tools are opened"
+        },
+        "cursor.browser.preventBodyElementAutoAdd": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prevent the body element from being automatically added to chat when browser dev tools open"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
