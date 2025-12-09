@@ -1,0 +1,44 @@
+{
+  "name": "cursor-debug-chat-extension",
+  "displayName": "Cursor Debug Chat Extension",
+  "description": "Switch chat mode to debug mode",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:cursor.switchToDebugChat"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursor.switchToDebugChat",
+        "title": "Switch Chat to Debug Mode"
+      }
+    ],
+    "configuration": {
+      "title": "Cursor Debug Chat",
+      "properties": {
+        "cursor.debugChat.modelSlug": {
+          "type": "string",
+          "default": "",
+          "description": "Model slug to use for debug chat mode"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
