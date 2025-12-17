@@ -92,6 +92,7 @@ export function useAircraftSystems(
     }
 
     // Calculate max airplanes based on population (1 per 2k population, min 25, max 80)
+    // Formula multiplies by 3 to create more dynamic air traffic - scales with city size
     const maxAirplanes = Math.min(80, Math.max(25, Math.floor(totalPopulation / 2000) * 3));
     
     // Speed multiplier based on game speed
@@ -241,6 +242,7 @@ export function useAircraftSystems(
           const distToAirport = Math.hypot(plane.x - airportCenterX, plane.y - airportCenterY);
           
           // Start landing approach when close enough and lifetime is low
+          // Both conditions must be met to prevent planes from landing too early or too late
           if (distToAirport < 400 && plane.lifeTime < 10) {
             plane.state = 'landing';
             plane.targetAltitude = 0;
