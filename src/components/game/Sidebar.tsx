@@ -3,6 +3,7 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useGame } from '@/context/GameContext';
 import { Tool, TOOL_INFO } from '@/types/game';
+import { getUnitCost } from '@/lib/simulation';
 import {
   BudgetIcon,
   ChartIcon,
@@ -269,9 +270,10 @@ function ExitDialog({
 
 // Memoized Sidebar Component
 export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => void }) {
-  const { state, setTool, setActivePanel, saveCity } = useGame();
+  const { state, setTool, setActivePanel, saveCity, spawnMilitaryUnit } = useGame();
   const { selectedTool, stats, activePanel } = state;
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const isCompetitive = state.gameMode === 'competitive';
   
   const handleSaveAndExit = useCallback(() => {
     saveCity();
@@ -286,12 +288,13 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
   
   // Direct tool categories (shown inline)
   const directCategories = useMemo(() => ({
-    'TOOLS': ['select', 'bulldoze', 'road', 'rail', 'subway'] as Tool[],
-    'ZONES': ['zone_residential', 'zone_commercial', 'zone_industrial', 'zone_dezone'] as Tool[],
-  }), []);
+    'TOOLS': (isCompetitive ? ['select', 'bulldoze', 'road'] : ['select', 'bulldoze', 'road', 'rail', 'subway']) as Tool[],
+    'ZONES': (isCompetitive ? [] : ['zone_residential', 'zone_commercial', 'zone_industrial', 'zone_dezone']) as Tool[],
+  }), [isCompetitive]);
   
   // Submenu categories (hover to expand) - includes all new assets from main
   const submenuCategories = useMemo(() => [
+    ...(isCompetitive ? [] : [
     { 
       key: 'services', 
       label: 'Services', 
@@ -334,7 +337,8 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
       tools: ['stadium', 'museum', 'airport', 'space_program', 'city_hall', 'amusement_park'] as Tool[],
       forceOpenUpward: true
     },
-  ], []);
+    ]),
+  ], [isCompetitive]);
   
   return (
     <div className="w-56 bg-sidebar border-r border-sidebar-border flex flex-col h-full relative z-40">
@@ -384,9 +388,11 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
         {/* Direct categories (TOOLS, ZONES) */}
         {Object.entries(directCategories).map(([category, tools]) => (
           <div key={category} className="mb-1">
+            {tools.length === 0 ? null : (
             <div className="px-4 py-2 text-[10px] font-bold tracking-widest text-muted-foreground">
               {category}
             </div>
+            )}
             <div className="px-2 flex flex-col gap-0.5">
               {tools.map(tool => {
                 const info = TOOL_INFO[tool];
@@ -415,29 +421,66 @@ export const Sidebar = React.memo(function Sidebar({ onExit }: { onExit?: () => 
             </div>
           </div>
         ))}
+
+        {/* Military (Competitive mode) */}
+        {isCompetitive && (
+          <div className="mt-2">
+            <div className="mx-4 my-2 h-px bg-sidebar-border/50" />
+            <div className="px-4 py-2 text-[10px] font-bold tracking-widest text-muted-foreground">
+              MILITARY
+            </div>
+            <div className="px-2 flex flex-col gap-0.5">
+              {([
+                { type: 'infantry' as const, label: 'Infantry' },
+                { type: 'tank' as const, label: 'Tank' },
+                { type: 'helicopter' as const, label: 'Helicopter' },
+              ]).map(({ type, label }) => {
+                const cost = getUnitCost(type);
+                const canAfford = stats.money >= cost;
+                return (
+                  <Button
+                    key={type}
+                    onClick={() => spawnMilitaryUnit(type)}
+                    disabled={!canAfford}
+                    variant="ghost"
+                    className="w-full justify-start gap-3 px-3 py-2 h-auto text-sm"
+                    title={`Train ${label} - Cost: $${cost.toLocaleString()}`}
+                  >
+                    <span className="flex-1 text-left truncate">{label}</span>
+                    <span className="text-xs opacity-60">${cost.toLocaleString()}</span>
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         
         {/* Separator */}
-        <div className="mx-4 my-2 h-px bg-sidebar-border/50" />
+        {!isCompetitive && <div className="mx-4 my-2 h-px bg-sidebar-border/50" />}
         
         {/* Buildings header */}
-        <div className="px-4 py-2 text-[10px] font-bold tracking-widest text-muted-foreground">
-          BUILDINGS
-        </div>
+        {!isCompetitive && (
+          <div className="px-4 py-2 text-[10px] font-bold tracking-widest text-muted-foreground">
+            BUILDINGS
+          </div>
+        )}
         
         {/* Submenu categories */}
-        <div className="px-2 flex flex-col gap-0.5">
-          {submenuCategories.map(({ key, label, tools, forceOpenUpward }) => (
-            <HoverSubmenu
-              key={key}
-              label={label}
-              tools={tools}
-              selectedTool={selectedTool}
-              money={stats.money}
-              onSelectTool={setTool}
-              forceOpenUpward={forceOpenUpward}
-            />
-          ))}
-        </div>
+        {!isCompetitive && (
+          <div className="px-2 flex flex-col gap-0.5">
+            {submenuCategories.map(({ key, label, tools, forceOpenUpward }) => (
+              <HoverSubmenu
+                key={key}
+                label={label}
+                tools={tools}
+                selectedTool={selectedTool}
+                money={stats.money}
+                onSelectTool={setTool}
+                forceOpenUpward={forceOpenUpward}
+              />
+            ))}
+          </div>
+        )}
       </ScrollArea>
       
       <div className="border-t border-sidebar-border p-2">
