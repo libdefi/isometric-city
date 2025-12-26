@@ -90,6 +90,9 @@ export const RAIL_COLORS = {
   RAIL: '#6a6a6a',              // Steel rail - silvery
   RAIL_HIGHLIGHT: '#8a8a8a',    // Rail highlight
   RAIL_SHADOW: '#404040',       // Rail shadow
+  // Bridge-specific colors (metallic steel look)
+  BRIDGE_DECK: '#7a8088',       // Steel bridge deck - bluish gray metal
+  BRIDGE_TIE: '#4a4a4a',        // Metal/treated wood ties on bridge
 };
 
 /** Locomotive colors (various liveries) */

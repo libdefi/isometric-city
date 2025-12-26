@@ -715,8 +715,8 @@ export function useVehicleSystems(
     
     const speedMultiplier = currentSpeed === 0 ? 0 : currentSpeed === 1 ? 1 : currentSpeed === 2 ? 2.5 : 4;
     
-    const baseMaxCars = 100;
-    const maxCars = Math.min(baseMaxCars, Math.max(15, Math.floor(currentGridSize * 1.25)));
+    const baseMaxCars = 85;  // Reduced ~15%
+    const maxCars = Math.min(baseMaxCars, Math.max(13, Math.floor(currentGridSize * 1.06)));
     carSpawnTimerRef.current -= delta;
     if (carsRef.current.length < maxCars && carSpawnTimerRef.current <= 0) {
       // Spawn cars at a moderate rate

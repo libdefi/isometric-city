@@ -16,11 +16,17 @@ export function getOppositeDirection(direction: CarDirection): CarDirection {
   return OPPOSITE_DIRECTION[direction];
 }
 
-// Check if a tile is a road or bridge (vehicles can traverse both)
+// Check if a tile is a road or road bridge (vehicles can traverse both)
+// Rail bridges are NOT valid for cars
 export function isRoadTile(gridData: Tile[][], gridSizeValue: number, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= gridSizeValue || y >= gridSizeValue) return false;
-  const type = gridData[y][x].building.type;
-  return type === 'road' || type === 'bridge';
+  const tile = gridData[y][x];
+  const type = tile.building.type;
+  // Road bridges are valid, rail bridges are not
+  if (type === 'bridge') {
+    return tile.building.bridgeTrackType !== 'rail';
+  }
+  return type === 'road';
 }
 
 // Get available direction options from a tile

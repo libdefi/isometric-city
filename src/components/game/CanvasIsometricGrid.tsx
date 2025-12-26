@@ -1743,14 +1743,6 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         perpY = neDirY;
       }
       
-      // Calculate TRUE 90° perpendicular for tower positioning (different from deck alignment)
-      // This keeps towers visually opposite across the bridge
-      const dx = endEdge.x - startEdge.x;
-      const dy = endEdge.y - startEdge.y;
-      const travelLen = Math.hypot(dx, dy);
-      const towerPerpX = -dy / travelLen;
-      const towerPerpY = dx / travelLen;
-      
       // ============================================================
       // DRAW SUPPORT PILLARS (one per tile, at front position to avoid z-order issues)
       // ============================================================
@@ -1814,7 +1806,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       
       const deckElevation = 3;
       
-      // Travel direction for connector extension (reuse dx/dy/travelLen from above)
+      // Travel direction for connector extension
+      const dx = endEdge.x - startEdge.x;
+      const dy = endEdge.y - startEdge.y;
+      const travelLen = Math.hypot(dx, dy);
       const travelDirX = dx / travelLen;
       const travelDirY = dy / travelLen;
       
@@ -1835,7 +1830,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         const connectorBridgeRight = { x: connectorEdge.x - perpX * halfWidth, y: connectorEdge.y - deckElevation - perpY * halfWidth };
         
         // Draw the connector (use appropriate color for road or rail)
-        ctx.fillStyle = isRailBridge ? '#6B6355' : style.asphalt;
+        ctx.fillStyle = isRailBridge ? RAIL_COLORS.BRIDGE_DECK : style.asphalt;
         ctx.beginPath();
         ctx.moveTo(connectorRoadLeft.x, connectorRoadLeft.y);
         ctx.lineTo(connectorBridgeLeft.x, connectorBridgeLeft.y);
@@ -1876,74 +1871,12 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       const endLeft = { x: endEdge.x + perpX * halfWidth, y: endY + perpY * halfWidth };
       const endRight = { x: endEdge.x - perpX * halfWidth, y: endY - perpY * halfWidth };
       
-      // Cable attachment points are the actual deck barrier edges (extended slightly outward)
-      // Use the same perpX/perpY as the deck edges for proper alignment
-      const barrierOffset = 3; // Extend slightly beyond the barriers
-      // Use travel direction for cable extension (travelDirX/travelDirY already defined above)
-      const cableExtension = 18; // How far cables extend beyond deck edges
-      // Use actual deck corner positions for proper edge attachment, extended along bridge direction
-      const cableAttachLeft = {
-        startX: startLeft.x + perpX * barrierOffset - travelDirX * cableExtension,
-        startY: startLeft.y + perpY * barrierOffset - travelDirY * cableExtension,
-        endX: endLeft.x + perpX * barrierOffset + travelDirX * cableExtension,
-        endY: endLeft.y + perpY * barrierOffset + travelDirY * cableExtension
-      };
-      const cableAttachRight = {
-        startX: startRight.x - perpX * barrierOffset - travelDirX * cableExtension,
-        startY: startRight.y - perpY * barrierOffset - travelDirY * cableExtension,
-        endX: endRight.x - perpX * barrierOffset + travelDirX * cableExtension,
-        endY: endRight.y - perpY * barrierOffset + travelDirY * cableExtension
-      };
-      
-      // ============================================================
-      // SUSPENSION BRIDGE - BACK TOWER (drawn BEFORE deck for proper layering)
-      // ============================================================
-      const suspTowerW = 3;  // Tower width (30% thinner than before)
-      const suspTowerH = 27; // Tower height
-      const suspTowerSpacing = w * 0.45; // Tower spacing from center - moved toward middle of bridge
-      
-      // Tower Y offsets for proper isometric layering
-      const backTowerYOffset = -5;  // Back tower shifted up (higher)
-      const frontTowerYOffset = 8;  // Front tower shifted down (lower)
-      
-      // Tower positions using TRUE 90° perpendicular for visually opposite placement
-      const leftTowerX = cx + towerPerpX * suspTowerSpacing;
-      const leftTowerY = cy + towerPerpY * suspTowerSpacing;
-      const rightTowerX = cx - towerPerpX * suspTowerSpacing;
-      const rightTowerY = cy - towerPerpY * suspTowerSpacing;
-      
-      // The tower with smaller Y is the back tower (drawn first, appears behind)
-      const backTower = leftTowerY < rightTowerY 
-        ? { x: leftTowerX, y: leftTowerY, isLeft: true } 
-        : { x: rightTowerX, y: rightTowerY, isLeft: false };
-      const frontTower = leftTowerY < rightTowerY 
-        ? { x: rightTowerX, y: rightTowerY, isLeft: false } 
-        : { x: leftTowerX, y: leftTowerY, isLeft: true };
-      
-      // Determine if this middle tile should have towers (for long suspension bridges >6 tiles)
-      // Place ONE middle tower at the center of the bridge for even spacing
-      // For a 9-tile bridge: indices 0,1,2,3,4,5,6,7,8 - middle would be index 4
-      // For a 10-tile bridge: indices 0-9 - middle would be index 4 (first of two center tiles)
-      // Use (bridgeSpan - 1) / 2 to get true center for both odd and even spans
-      const middleIndex = Math.floor((bridgeSpan - 1) / 2);
-      // For bridges with span info: place at exact middle index
-      // For old bridges without span info (bridgeSpan defaults to 1): use grid-based fallback
-      const hasSpanInfo = building.bridgeSpan !== undefined && building.bridgeSpan > 1;
-      const isMiddleTowerTile = position === 'middle' && bridgeType === 'suspension' && (
-        (hasSpanInfo && bridgeSpan > 6 && bridgeIndex === middleIndex) ||
-        (!hasSpanInfo && (gridX + gridY) % 5 === 2)
-      );
-      
-      // Draw back suspension tower BEFORE the deck (shifted up)
-      // Show on start/end tiles OR on middle tower tiles for long bridges
-      if (bridgeType === 'suspension' && (position === 'start' || position === 'end' || isMiddleTowerTile) && currentZoom >= 0.5) {
-        ctx.fillStyle = style.support;
-        ctx.fillRect(backTower.x - suspTowerW/2, cy - suspTowerH + backTowerYOffset, suspTowerW, suspTowerH + 8);
-      }
+      // NOTE: Suspension bridge towers and cables are now drawn in drawSuspensionBridgeOverlay
+      // which is called after buildings for proper z-ordering
       
       // Draw the deck as a parallelogram with tile-edge-aligned sides
-      // Rail bridges use gravel/ballast color, road bridges use asphalt
-      ctx.fillStyle = isRailBridge ? '#6B6355' : style.asphalt; // Gravel for rail, asphalt for road
+      // Rail bridges use metallic steel color, road bridges use asphalt
+      ctx.fillStyle = isRailBridge ? RAIL_COLORS.BRIDGE_DECK : style.asphalt;
       ctx.beginPath();
       ctx.moveTo(startLeft.x, startLeft.y);
       ctx.lineTo(endLeft.x, endLeft.y);
@@ -2000,8 +1933,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             y: pt.y + perpY * offset
           });
           
-          // Draw ties (wooden sleepers) for both tracks
-          ctx.strokeStyle = RAIL_COLORS.TIE;
+          // Draw ties (metal/treated wood sleepers on bridge) for both tracks
+          ctx.strokeStyle = RAIL_COLORS.BRIDGE_TIE;
           ctx.lineWidth = currentZoom >= 0.7 ? 2.5 : 2;
           ctx.lineCap = 'butt';
           
@@ -2087,57 +2020,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
       // BRIDGE TYPE-SPECIFIC DECORATIONS
       // ============================================================
       
-      // ============================================================
-      // SUSPENSION BRIDGE - FRONT TOWER AND CABLES (drawn AFTER deck)
-      // ============================================================
-      // Show on start/end tiles OR on middle tower tiles for long bridges
-      if (bridgeType === 'suspension' && (position === 'start' || position === 'end' || isMiddleTowerTile) && currentZoom >= 0.5) {
-        const cableColor = style.cable || '#DC143C';
-        
-        // Draw front tower AFTER the deck for proper layering (shifted down)
-        ctx.fillStyle = style.support;
-        ctx.fillRect(frontTower.x - suspTowerW/2, cy - suspTowerH + frontTowerYOffset, suspTowerW, suspTowerH + 8);
-        
-        // Cables from both towers to deck edges
-        // Determine which deck edge each tower is closer to (left or right barrier)
-        ctx.strokeStyle = cableColor;
-        ctx.lineWidth = 1.25;
-        
-        // Calculate midpoint of each barrier to determine which tower connects to which
-        const leftBarrierMidX = (cableAttachLeft.startX + cableAttachLeft.endX) / 2;
-        const rightBarrierMidX = (cableAttachRight.startX + cableAttachRight.endX) / 2;
-        
-        // Back tower connects to whichever barrier is closer (by X distance)
-        const backToLeft = Math.abs(backTower.x - leftBarrierMidX);
-        const backToRight = Math.abs(backTower.x - rightBarrierMidX);
-        const backAttach = backToLeft < backToRight ? cableAttachLeft : cableAttachRight;
-        const frontAttach = backToLeft < backToRight ? cableAttachRight : cableAttachLeft;
-        
-        // Helper to draw a sagging cable arc
-        const drawCableArc = (fromX: number, fromY: number, toX: number, toY: number) => {
-          // Control point is at the midpoint, sagging downward
-          const midX = (fromX + toX) / 2;
-          const midY = (fromY + toY) / 2;
-          const sag = 8; // How much the cable sags downward
-          const controlX = midX;
-          const controlY = midY + sag;
-          
-          ctx.beginPath();
-          ctx.moveTo(fromX, fromY);
-          ctx.quadraticCurveTo(controlX, controlY, toX, toY);
-          ctx.stroke();
-        };
-        
-        // Back tower cables to its edge (arcs)
-        const backTowerTop = cy - suspTowerH + backTowerYOffset;
-        drawCableArc(backTower.x, backTowerTop, backAttach.startX, backAttach.startY);
-        drawCableArc(backTower.x, backTowerTop, backAttach.endX, backAttach.endY);
-        
-        // Front tower cables to its edge (arcs)
-        const frontTowerTop = cy - suspTowerH + frontTowerYOffset;
-        drawCableArc(frontTower.x, frontTowerTop, frontAttach.startX, frontAttach.startY);
-        drawCableArc(frontTower.x, frontTowerTop, frontAttach.endX, frontAttach.endY);
-      }
+      // NOTE: Suspension bridge front tower and cables are now drawn in drawSuspensionBridgeOverlay
+      // which is called after buildings for proper z-ordering
       
       // Large bridge truss structure
       if (bridgeType === 'large' && currentZoom >= 0.5) {
@@ -2175,6 +2059,209 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
           ctx.stroke();
         }
       }
+    }
+    
+    // Draw suspension bridge towers and cables as an overlay (on top of buildings)
+    // This is called separately after buildings are drawn for proper z-ordering
+    function drawSuspensionBridgeOverlay(
+      ctx: CanvasRenderingContext2D,
+      x: number,
+      y: number,
+      building: Building,
+      currentZoom: number
+    ) {
+      if (building.bridgeType !== 'suspension' || currentZoom < 0.5) return;
+      
+      const w = TILE_WIDTH;
+      const h = TILE_HEIGHT;
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      
+      const orientation = building.bridgeOrientation || 'ns';
+      const variant = building.bridgeVariant || 0;
+      const position = building.bridgePosition || 'middle';
+      const bridgeIndex = building.bridgeIndex ?? 0;
+      const bridgeSpan = building.bridgeSpan ?? 1;
+      const trackType = building.bridgeTrackType || 'road';
+      const isRailBridge = trackType === 'rail';
+      
+      // Bridge width for deck positioning
+      const bridgeWidthRatio = isRailBridge ? 0.405 : 0.45;
+      const halfWidth = w * bridgeWidthRatio * 0.5;
+      
+      // Edge points
+      const northEdge = { x: x + w * 0.25, y: y + h * 0.25 };
+      const eastEdge = { x: x + w * 0.75, y: y + h * 0.25 };
+      const southEdge = { x: x + w * 0.75, y: y + h * 0.75 };
+      const westEdge = { x: x + w * 0.25, y: y + h * 0.75 };
+      
+      // Isometric direction vectors
+      const neEdgeLen = Math.hypot(w / 2, h / 2);
+      const neDirX = (w / 2) / neEdgeLen;
+      const neDirY = (h / 2) / neEdgeLen;
+      const nwDirX = -(w / 2) / neEdgeLen;
+      const nwDirY = (h / 2) / neEdgeLen;
+      
+      let startEdge: { x: number; y: number };
+      let endEdge: { x: number; y: number };
+      let perpX: number;
+      let perpY: number;
+      
+      if (orientation === 'ns') {
+        startEdge = northEdge;
+        endEdge = southEdge;
+        perpX = nwDirX;
+        perpY = nwDirY;
+      } else {
+        startEdge = eastEdge;
+        endEdge = westEdge;
+        perpX = neDirX;
+        perpY = neDirY;
+      }
+      
+      const deckElevation = 3;
+      const startY = startEdge.y - deckElevation;
+      const endY = endEdge.y - deckElevation;
+      
+      // Tower perpendicular (true 90°)
+      const dx = endEdge.x - startEdge.x;
+      const dy = endEdge.y - startEdge.y;
+      const travelLen = Math.hypot(dx, dy);
+      const travelDirX = dx / travelLen;
+      const travelDirY = dy / travelLen;
+      const towerPerpX = -dy / travelLen;
+      const towerPerpY = dx / travelLen;
+      
+      // Deck corners for cable attachment
+      const startLeft = { x: startEdge.x + perpX * halfWidth, y: startY + perpY * halfWidth };
+      const startRight = { x: startEdge.x - perpX * halfWidth, y: startY - perpY * halfWidth };
+      const endLeft = { x: endEdge.x + perpX * halfWidth, y: endY + perpY * halfWidth };
+      const endRight = { x: endEdge.x - perpX * halfWidth, y: endY - perpY * halfWidth };
+      
+      // Cable attachment points
+      const barrierOffset = 3;
+      const cableExtension = 18;
+      const cableAttachLeft = {
+        startX: startLeft.x + perpX * barrierOffset - travelDirX * cableExtension,
+        startY: startLeft.y + perpY * barrierOffset - travelDirY * cableExtension,
+        endX: endLeft.x + perpX * barrierOffset + travelDirX * cableExtension,
+        endY: endLeft.y + perpY * barrierOffset + travelDirY * cableExtension
+      };
+      const cableAttachRight = {
+        startX: startRight.x - perpX * barrierOffset - travelDirX * cableExtension,
+        startY: startRight.y - perpY * barrierOffset - travelDirY * cableExtension,
+        endX: endRight.x - perpX * barrierOffset + travelDirX * cableExtension,
+        endY: endRight.y - perpY * barrierOffset + travelDirY * cableExtension
+      };
+      
+      // Tower dimensions and positions
+      const suspTowerW = 3;
+      const suspTowerH = 27;
+      const suspTowerSpacing = w * 0.45;
+      const backTowerYOffset = -5;
+      const frontTowerYOffset = 8;
+      
+      const leftTowerX = cx + towerPerpX * suspTowerSpacing;
+      const leftTowerY = cy + towerPerpY * suspTowerSpacing;
+      const rightTowerX = cx - towerPerpX * suspTowerSpacing;
+      const rightTowerY = cy - towerPerpY * suspTowerSpacing;
+      
+      const backTower = leftTowerY < rightTowerY 
+        ? { x: leftTowerX, y: leftTowerY, isLeft: true } 
+        : { x: rightTowerX, y: rightTowerY, isLeft: false };
+      const frontTower = leftTowerY < rightTowerY 
+        ? { x: rightTowerX, y: rightTowerY, isLeft: false } 
+        : { x: leftTowerX, y: leftTowerY, isLeft: true };
+      
+      // Check if this is a middle tower tile
+      const middleIndex = Math.floor((bridgeSpan - 1) / 2);
+      const hasSpanInfo = building.bridgeSpan !== undefined && building.bridgeSpan > 1;
+      const isMiddleTowerTile = position === 'middle' && (
+        (hasSpanInfo && bridgeSpan > 6 && bridgeIndex === middleIndex) ||
+        (!hasSpanInfo && ((x / w + y / h) % 5 === 2))
+      );
+      
+      // Only draw on start/end tiles or middle tower tiles
+      if (position !== 'start' && position !== 'end' && !isMiddleTowerTile) return;
+      
+      // Style
+      const cableColor = variant === 0 ? '#DC143C' : '#FF4500';
+      const supportColor = variant === 0 ? '#909090' : '#808080';
+      const baseColor = variant === 0 ? '#606060' : '#555555'; // Darker concrete base
+      
+      // Tower dimensions
+      const towerHeight = suspTowerH + 8;
+      const baseHeight = 6; // Height of the concrete base
+      const baseWidth = suspTowerW + 2; // Slightly wider base
+      
+      // Draw back tower with concrete base
+      // First draw the darker base at the bottom
+      ctx.fillStyle = baseColor;
+      ctx.fillRect(
+        backTower.x - baseWidth/2, 
+        cy - suspTowerH + backTowerYOffset + towerHeight - baseHeight, 
+        baseWidth, 
+        baseHeight
+      );
+      // Then draw the main tower on top
+      ctx.fillStyle = supportColor;
+      ctx.fillRect(
+        backTower.x - suspTowerW/2, 
+        cy - suspTowerH + backTowerYOffset, 
+        suspTowerW, 
+        towerHeight - baseHeight
+      );
+      
+      // Draw front tower with concrete base
+      // First draw the darker base at the bottom
+      ctx.fillStyle = baseColor;
+      ctx.fillRect(
+        frontTower.x - baseWidth/2, 
+        cy - suspTowerH + frontTowerYOffset + towerHeight - baseHeight, 
+        baseWidth, 
+        baseHeight
+      );
+      // Then draw the main tower on top
+      ctx.fillStyle = supportColor;
+      ctx.fillRect(
+        frontTower.x - suspTowerW/2, 
+        cy - suspTowerH + frontTowerYOffset, 
+        suspTowerW, 
+        towerHeight - baseHeight
+      );
+      
+      // Draw cables
+      ctx.strokeStyle = cableColor;
+      ctx.lineWidth = 1.25;
+      
+      const leftBarrierMidX = (cableAttachLeft.startX + cableAttachLeft.endX) / 2;
+      const rightBarrierMidX = (cableAttachRight.startX + cableAttachRight.endX) / 2;
+      
+      const backToLeft = Math.abs(backTower.x - leftBarrierMidX);
+      const backToRight = Math.abs(backTower.x - rightBarrierMidX);
+      const backAttach = backToLeft < backToRight ? cableAttachLeft : cableAttachRight;
+      const frontAttach = backToLeft < backToRight ? cableAttachRight : cableAttachLeft;
+      
+      const drawCableArc = (fromX: number, fromY: number, toX: number, toY: number) => {
+        const midX = (fromX + toX) / 2;
+        const midY = (fromY + toY) / 2;
+        const sag = 8;
+        const controlX = midX;
+        const controlY = midY + sag;
+        
+        ctx.beginPath();
+        ctx.moveTo(fromX, fromY);
+        ctx.quadraticCurveTo(controlX, controlY, toX, toY);
+        ctx.stroke();
+      };
+      
+      const backTowerTop = cy - suspTowerH + backTowerYOffset;
+      drawCableArc(backTower.x, backTowerTop, backAttach.startX, backAttach.startY);
+      drawCableArc(backTower.x, backTowerTop, backAttach.endX, backAttach.endY);
+      
+      const frontTowerTop = cy - suspTowerH + frontTowerYOffset;
+      drawCableArc(frontTower.x, frontTowerTop, frontAttach.startX, frontAttach.startY);
+      drawCableArc(frontTower.x, frontTowerTop, frontAttach.endX, frontAttach.endY);
     }
     
     // Draw isometric tile base
@@ -3462,6 +3549,15 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
         for (let i = 0; i < buildingQueue.length; i++) {
           const { tile, screenX, screenY } = buildingQueue[i];
           drawBuilding(buildingsCtx, screenX, screenY, tile);
+        }
+        
+        // Draw suspension bridge towers and cables ON TOP of buildings
+        // These need to appear above nearby buildings for proper visual layering
+        for (let i = 0; i < bridgeQueue.length; i++) {
+          const { tile, screenX, screenY } = bridgeQueue[i];
+          if (tile.building.bridgeType === 'suspension') {
+            drawSuspensionBridgeOverlay(buildingsCtx, screenX, screenY, tile.building, zoom);
+          }
         }
         
         // NOTE: Recreation pedestrians are now drawn in the animation loop on the air canvas

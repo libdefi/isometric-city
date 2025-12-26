@@ -33,8 +33,8 @@ export const MAX_BEACH_SWIMMERS_PER_TILE = 3;       // Max swimmers per water ti
 export const MAX_BEACH_MATS_PER_EDGE = 2;           // Max mats per beach edge
 
 // Pedestrian performance limits
-export const PEDESTRIAN_MAX_COUNT = 800;            // Maximum pedestrians (hard cap)
-export const PEDESTRIAN_ROAD_TILE_DENSITY = 2.4;    // Target pedestrians per road tile (reduced from 3)
+export const PEDESTRIAN_MAX_COUNT = 560;            // Maximum pedestrians (hard cap) - reduced ~30%
+export const PEDESTRIAN_ROAD_TILE_DENSITY = 1.7;    // Target pedestrians per road tile - reduced ~30%
 export const PEDESTRIAN_SPAWN_BATCH_SIZE = 25;      // How many to try spawning at once
 export const PEDESTRIAN_SPAWN_INTERVAL = 0.03;      // Seconds between spawn batches
 export const PEDESTRIAN_UPDATE_SKIP_DISTANCE = 30;  // Skip detailed updates for pedestrians this far from view
