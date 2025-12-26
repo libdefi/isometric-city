@@ -49,6 +49,8 @@ export interface VehicleSystemState {
   worldStateRef: React.MutableRefObject<WorldRenderState>;
   gridVersionRef: React.MutableRefObject<number>;
   cachedRoadTileCountRef: React.MutableRefObject<{ count: number; gridVersion: number }>;
+  // PERF: Pre-computed intersection map to avoid repeated getDirectionOptions() calls per-car per-frame
+  cachedIntersectionMapRef: React.MutableRefObject<{ map: Map<number, boolean>; gridVersion: number }>;
   state: {
     services: {
       police: number[][];
@@ -82,7 +84,7 @@ export function useVehicleSystems(
     trainsRef,
   } = refs;
 
-  const { worldStateRef, gridVersionRef, cachedRoadTileCountRef, state, isMobile } = systemState;
+  const { worldStateRef, gridVersionRef, cachedRoadTileCountRef, cachedIntersectionMapRef, state, isMobile } = systemState;
 
   const spawnRandomCar = useCallback(() => {
     const { grid: currentGrid, gridSize: currentGridSize } = worldStateRef.current;
@@ -690,11 +692,30 @@ export function useVehicleSystems(
   }, [worldStateRef, emergencyVehiclesRef, emergencyDispatchTimerRef, updateEmergencyDispatch, activeFiresRef, activeCrimesRef, activeCrimeIncidentsRef]);
 
   // Helper to check if a tile is an intersection (3+ connections)
+  // PERF: Use cached intersection map to avoid repeated O(n) getDirectionOptions() calls per-car per-frame
   const isIntersection = useCallback((grid: Tile[][], gridSize: number, x: number, y: number): boolean => {
     if (!isRoadTile(grid, gridSize, x, y)) return false;
-    const options = getDirectionOptions(grid, gridSize, x, y);
-    return options.length >= 3;
-  }, []);
+    
+    // Check if cache is valid for current grid version
+    const currentVersion = gridVersionRef.current;
+    if (cachedIntersectionMapRef.current.gridVersion !== currentVersion) {
+      // Rebuild the intersection cache for the entire grid
+      const newMap = new Map<number, boolean>();
+      for (let cy = 0; cy < gridSize; cy++) {
+        for (let cx = 0; cx < gridSize; cx++) {
+          if (isRoadTile(grid, gridSize, cx, cy)) {
+            const options = getDirectionOptions(grid, gridSize, cx, cy);
+            newMap.set(cy * gridSize + cx, options.length >= 3);
+          }
+        }
+      }
+      cachedIntersectionMapRef.current = { map: newMap, gridVersion: currentVersion };
+    }
+    
+    // O(1) lookup from cache
+    const key = y * gridSize + x;
+    return cachedIntersectionMapRef.current.map.get(key) ?? false;
+  }, [gridVersionRef, cachedIntersectionMapRef]);
 
   const updateCars = useCallback((delta: number) => {
     const { grid: currentGrid, gridSize: currentGridSize, speed: currentSpeed, zoom: currentZoom } = worldStateRef.current;

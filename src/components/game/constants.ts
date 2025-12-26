@@ -271,3 +271,9 @@ export const MAX_TRAINS = 35;                      // Maximum trains in city
 export const HELICOPTER_MIN_ZOOM = 0.3;           // Minimum zoom to show helicopters
 export const SMOG_MIN_ZOOM = 0.35;                // Minimum zoom to show factory smog
 export const FIREWORK_MIN_ZOOM = 0.3;             // Minimum zoom to show fireworks
+
+// PERF: Pre-computed building type sets for O(1) lookups during lighting calculations
+// These are module-level constants to avoid allocating on every render frame
+export const NON_LIT_BUILDING_TYPES = new Set(['grass', 'empty', 'water', 'road', 'tree', 'park', 'park_large', 'tennis']);
+export const RESIDENTIAL_BUILDING_TYPES = new Set(['house_small', 'house_medium', 'mansion', 'apartment_low', 'apartment_high']);
+export const COMMERCIAL_BUILDING_TYPES = new Set(['shop_small', 'shop_medium', 'office_low', 'office_high', 'mall']);

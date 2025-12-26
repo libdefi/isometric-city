@@ -46,6 +46,9 @@ import {
   HELICOPTER_MIN_ZOOM,
   SMOG_MIN_ZOOM,
   FIREWORK_MIN_ZOOM,
+  NON_LIT_BUILDING_TYPES,
+  RESIDENTIAL_BUILDING_TYPES,
+  COMMERCIAL_BUILDING_TYPES,
 } from '@/components/game/constants';
 import {
   gridToScreen,
@@ -247,6 +250,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
   // Performance: Cache expensive grid calculations
   const cachedRoadTileCountRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
   const cachedPopulationRef = useRef<{ count: number; gridVersion: number }>({ count: 0, gridVersion: -1 });
+  // PERF: Cache intersection status per-tile to avoid repeated getDirectionOptions() calls
+  const cachedIntersectionMapRef = useRef<{ map: Map<number, boolean>; gridVersion: number }>({ map: new Map(), gridVersion: -1 });
   const gridVersionRef = useRef(0);
   
   // Performance: Cache road merge analysis (expensive calculation done per-road-tile)
@@ -324,6 +329,7 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     worldStateRef,
     gridVersionRef,
     cachedRoadTileCountRef,
+    cachedIntersectionMapRef,
     state: {
       services: state.services,
       stats: state.stats,
@@ -3742,9 +3748,10 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
     };
     
     // Set for building types that are not lit
-    const nonLitTypes = new Set(['grass', 'empty', 'water', 'road', 'tree', 'park', 'park_large', 'tennis']);
-    const residentialTypes = new Set(['house_small', 'house_medium', 'mansion', 'apartment_low', 'apartment_high']);
-    const commercialTypes = new Set(['shop_small', 'shop_medium', 'office_low', 'office_high', 'mall']);
+    // PERF: Use pre-computed module-level sets for O(1) lookups (avoid allocation per render)
+    const nonLitTypes = NON_LIT_BUILDING_TYPES;
+    const residentialTypes = RESIDENTIAL_BUILDING_TYPES;
+    const commercialTypes = COMMERCIAL_BUILDING_TYPES;
     
     // Collect light sources in a single pass through visible tiles
     const lightCutouts: Array<{x: number, y: number, type: 'road' | 'building', buildingType?: string, seed?: number}> = [];

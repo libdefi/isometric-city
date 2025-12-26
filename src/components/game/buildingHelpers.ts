@@ -15,6 +15,10 @@ export interface TileMetadata {
   shouldFlipForRoad: boolean;
   /** Whether the tile has an adjacent road (for building orientation) */
   hasAdjacentRoad: boolean;
+  /** PERF: Pre-computed intersection status for roads - avoids repeated calculation in vehicle update loop */
+  isIntersection: boolean;
+  /** Number of road connections (for intersection detection: >= 3 = intersection) */
+  roadConnectionCount: number;
 }
 
 // Park building types that get green bases
@@ -216,6 +220,22 @@ export function useBuildingHelpers(grid: Tile[][], gridSize: number) {
           shouldFlipForRoad = roadOnNorthOrWest && !roadOnSouthOrEast;
         }
         
+        // PERF: Pre-compute intersection status for road tiles
+        // This avoids repeated getDirectionOptions() calls in the vehicle update loop
+        let isIntersection = false;
+        let roadConnectionCount = 0;
+        
+        if (buildingType === 'road' || buildingType === 'bridge') {
+          // Count road connections in all 4 directions
+          if (isRoad(x - 1, y)) roadConnectionCount++;
+          if (isRoad(x + 1, y)) roadConnectionCount++;
+          if (isRoad(x, y - 1)) roadConnectionCount++;
+          if (isRoad(x, y + 1)) roadConnectionCount++;
+          
+          // Intersection = 3 or more connections
+          isIntersection = roadConnectionCount >= 3;
+        }
+        
         map.set(key, {
           isPartOfMultiTileBuilding,
           isPartOfParkBuilding,
@@ -226,6 +246,8 @@ export function useBuildingHelpers(grid: Tile[][], gridSize: number) {
           needsGreenBaseForPark,
           shouldFlipForRoad,
           hasAdjacentRoad,
+          isIntersection,
+          roadConnectionCount,
         });
       }
     }
