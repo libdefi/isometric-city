@@ -3070,7 +3070,11 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
             setDragStartTile(null);
             setDragEndTile(null);
           }}>
-            <DialogContent className="max-w-[400px]">
+            <DialogContent 
+              className="max-w-[400px]"
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               <DialogHeader>
                 <T>
                   <DialogTitle>City Discovered!</DialogTitle>
@@ -3095,7 +3099,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   <T>
                     <Button
                       variant="outline"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setCityConnectionDialog(null);
                         setDragStartTile(null);
                         setDragEndTile(null);
@@ -3106,7 +3111,8 @@ export function CanvasIsometricGrid({ overlayMode, selectedTile, setSelectedTile
                   </T>
                   <T>
                     <Button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         connectToCity(city.id);
                         setCityConnectionDialog(null);
                         setDragStartTile(null);
