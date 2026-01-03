@@ -621,8 +621,8 @@ const SPRITE_PACK_SPRITES4: SpritePack = {
     police_station: -0.3,
     fire_station: -0.3,
     hospital: -0.50,
-    school: -0.35,
-    university: -0.55,
+    school: -0.30,
+    university: -0.85,
     power_plant: -0.3,
   },
   servicesHorizontalOffsets: {
